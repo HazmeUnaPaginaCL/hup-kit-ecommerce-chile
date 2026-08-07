@@ -1,0 +1,145 @@
+/* HUP - Kit Ecommerce Chile — Checkout CSS v2.3 */
+
+.woocommerce-checkout #billing_city.select,
+.woocommerce-checkout #shipping_city.select {
+    background-color: #fff;
+    border: 1px solid #d5d8dc;
+    border-radius: 6px;
+    box-shadow: none;
+    padding: 10px 12px;
+    appearance: auto;
+    -webkit-appearance: auto;
+    width: 100%;
+}
+.woocommerce-checkout #billing_city.select:hover { border-color: #bfc3c7; }
+.woocommerce-checkout #billing_city.select:focus,
+.woocommerce-checkout #shipping_city.select:focus { border-color: #999; outline: none; }
+
+/* País estático */
+.hupkec-country-static { margin-bottom: 1em; }
+.hupkec-country-static label { display: block; font-size: 0.857em; font-weight: 600; margin-bottom: 4px; }
+.hupkec-country-value { display: block; padding: 8px 0; font-size: 1em; font-weight: 400; }
+
+/* Error RUT */
+.hupkec-rut-error {
+    display: block;
+    color: #c00;
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+/* =====================================================
+   MÓDULO DE FACTURACIÓN
+===================================================== */
+.hupkec-billing-module {
+    margin-top: 20px;
+    border-top: 1px solid #e8e8e8;
+    padding-top: 16px;
+}
+
+/* Trigger / Checkbox */
+.hupkec-billing-trigger { margin-bottom: 0; }
+.hupkec-billing-check-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    color: #1d2327;
+    padding: 8px 0;
+}
+.hupkec-billing-checkbox {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #0C447C;
+    flex-shrink: 0;
+}
+
+/* Bloque de campos */
+.hupkec-billing-fields {
+    display: none;
+    overflow: hidden;
+}
+.hupkec-billing-fields.hupkec-billing-open { display: block; }
+.hupkec-billing-fields-inner {
+    background: #f8fbfe;
+    border: 1px solid #d0e8f7;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 12px;
+}
+
+/* Header del bloque */
+.hupkec-billing-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.hupkec-billing-header strong {
+    font-size: 14px;
+    color: #0C447C;
+}
+
+/* Botón copiar */
+.hupkec-btn-copy-billing {
+    font-size: 12px;
+    padding: 5px 12px;
+    background: #fff;
+    border: 1px solid #378ADD;
+    color: #0C447C;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background .2s;
+}
+.hupkec-btn-copy-billing:hover { background: #e8f3fb; }
+.hupkec-btn-copied {
+    background: #e8f5e9 !important;
+    border-color: #4caf50 !important;
+    color: #1b5e20 !important;
+}
+
+/* Grid de campos */
+.hupkec-billing-grid { display: block; }
+.hupkec-billing-field-row { margin-bottom: 12px; }
+.hupkec-billing-field-row label { font-size: 13px; font-weight: 600; margin-bottom: 4px; display: block; }
+.hupkec-billing-field-row .input-text,
+.hupkec-billing-field-row select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #d5d8dc;
+    border-radius: 4px;
+    font-size: 14px;
+    background: #fff;
+}
+.hupkec-billing-field-row .input-text:focus,
+.hupkec-billing-field-row select:focus {
+    border-color: #378ADD;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(55,138,221,.15);
+}
+.hupkec-billing-field-row.woocommerce-invalid .input-text,
+.hupkec-billing-field-row.woocommerce-invalid select {
+    border-color: #c00;
+}
+
+/* =========================================================
+   PÁGINA DE GRACIAS — "Información adicional"
+   Reglas que antes iban como atributos style en el HTML.
+========================================================= */
+.hupkec-thankyou-fields { margin-top: 20px; }
+.hupkec-thankyou-fields table { width: 100%; }
+.hupkec-thankyou-fields th,
+.hupkec-thankyou-fields td { padding: 6px 12px; }
+.hupkec-thankyou-fields th { text-align: left; }
+
+/* Sección "Datos de facturación" en la página de gracias */
+.hupkec-thankyou-billing { margin-top: 30px; }
+.hupkec-thankyou-billing table { width: 100%; }
+.hupkec-thankyou-billing th,
+.hupkec-thankyou-billing td { padding: 6px 12px; }
+.hupkec-thankyou-billing th { text-align: left; }

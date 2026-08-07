@@ -1,0 +1,14 @@
+{
+  "name": "hup-kit-ecommerce-chile",
+  "version": "1.0.0",
+  "description": "Herramientas de desarrollo. Este archivo NO se distribuye con el plugin.",
+  "private": true,
+  "license": "GPL-2.0-or-later",
+  "scripts": {
+    "lint": "eslint assets/js",
+    "lint:fix": "eslint assets/js --fix"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0"
+  }
+}

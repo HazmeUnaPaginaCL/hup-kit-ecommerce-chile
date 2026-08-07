@@ -1,0 +1,43 @@
+# WordPress
+*.log
+.DS_Store
+.idea/
+.vscode/
+node_modules/
+vendor/
+
+# Archivos temporales
+*.tmp
+*.temp
+*.cache
+
+# Archivos de sistema
+Thumbs.db
+.DS_Store
+
+# Archivos de respaldo
+*.sql
+*.zip
+*.tar.gz
+*.bak
+
+# WordPress uploads (si se desarrolla aquí)
+wp-content/uploads/
+wp-content/upgrade/
+wp-content/backup-db/
+wp-content/cache/
+
+# Herramientas de desarrollo
+# NOTA: package.json, package-lock.json y eslint.config.js
+# (son configuración del proyecto), pero NUNCA van dentro
+.eslintcache
+
+# Configuración local de Claude Code (no es parte del plugin)
+.claude/
+
+# Exports de traducción de translate.wordpress.org (regenerable)
+wp-plugins-*.po
+
+# Archivos internos de desarrollo - estrategia de negocio, no van al repo público
+CLAUDE.md
+TASKS.md
