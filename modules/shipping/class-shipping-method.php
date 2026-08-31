@@ -54,7 +54,10 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
 
         $city = $this->get_customer_city( $package );
 
-        if ( ! $city ) return;
+        if ( ! $city ) {
+            $this->log_unresolved_city( $package );
+            return;
+        }
 
         $zone = HUPKEC_Shipping::get_zone_for_city( $city );
         if ( ! $zone ) return;
@@ -104,53 +107,78 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
     }
 
     /**
-     * Obtiene la ciudad del cliente desde múltiples fuentes.
-     * En WC 10.6+ el campo city no llega directo — hay que parsearlo de post_data.
+     * Obtiene la comuna del cliente desde varias fuentes.
+     *
+     * El valor puede llegar en distintos campos según el contexto y la
+     * configuración de la tienda:
+     *   - En 'update_order_review' WooCommerce envía el formulario serializado en
+     *     $_POST['post_data']; en el submit final (?wc-ajax=checkout) NO lo manda,
+     *     los campos llegan sueltos. Por eso el costo se calculaba bien al mostrar
+     *     el checkout, pero al confirmar el pedido la comuna no se resolvía y
+     *     WooCommerce rechazaba la compra con "método de envío no seleccionado".
+     *   - Según "Enviar a una dirección diferente", la comuna real puede venir en
+     *     shipping_city o en billing_city.
+     * Por eso no basta con un solo campo: se prueba el destino del paquete y, si
+     * falla, ambos campos por prioridad, tomando el primero con valor.
      */
     private function get_customer_city( $package ) {
 
-        // 1. Desde el package destination (más directo)
+        // 1. Desde el package destination (lo más fiable: es lo que WC hashea y
+        //    valida contra la tarifa elegida).
         if ( ! empty( $package['destination']['city'] ) ) {
             return sanitize_text_field( $package['destination']['city'] );
         }
 
-        // Estos datos llegan durante el cálculo de envío de WooCommerce
-        // (update_order_review); WC gestiona el flujo y no expone un nonce propio
-        // que podamos verificar aquí. Solo leemos la comuna y la sanitizamos por campo.
+        // Estos datos llegan durante el cálculo de envío de WooCommerce, que
+        // gestiona su propio flujo y nonce. Solo leemos la comuna y la sanitizamos.
         // phpcs:disable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
-        // 2. Parsear el post_data completo que WC envía en update_order_review
+        // 2. post_data serializado (update_order_review).
         $post_data_str = isset( $_POST['post_data'] ) ? wp_unslash( $_POST['post_data'] ) : '';
         if ( $post_data_str ) {
             $post_data = [];
             wp_parse_str( $post_data_str, $post_data );
-
-            $ship_diff = ! empty( $post_data['ship_to_different_address'] );
-
-            if ( $ship_diff && ! empty( $post_data['shipping_city'] ) ) {
-                return sanitize_text_field( $post_data['shipping_city'] );
-            }
-            if ( ! empty( $post_data['billing_city'] ) ) {
-                return sanitize_text_field( $post_data['billing_city'] );
-            }
+            $city = $this->pick_city( $post_data );
+            if ( $city !== '' ) return $city;
         }
 
-        // 3. Desde los campos directos del POST
-        $ship_diff = ! empty( $_POST['ship_to_different_address'] );
-        if ( $ship_diff && ! empty( $_POST['shipping_city'] ) ) {
-            return sanitize_text_field( wp_unslash( $_POST['shipping_city'] ) );
-        }
-        if ( ! empty( $_POST['billing_city'] ) ) {
-            return sanitize_text_field( wp_unslash( $_POST['billing_city'] ) );
-        }
+        // 3. Campos sueltos del POST (submit final).
+        $city = $this->pick_city( wp_unslash( $_POST ) );
+        if ( $city !== '' ) return $city;
         // phpcs:enable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
-        // 4. Desde WC()->customer como último recurso
+        // 4. Desde WC()->customer como último recurso.
         if ( WC()->customer ) {
             $city = WC()->customer->get_shipping_city() ?: WC()->customer->get_billing_city();
             if ( $city ) return sanitize_text_field( $city );
         }
 
+        return '';
+    }
+
+    /**
+     * Elige la comuna de un conjunto de campos (shipping_city / billing_city).
+     *
+     * Prioriza shipping_city si el cliente eligió enviar a otra dirección, pero
+     * SIEMPRE cae al otro campo si el preferido viene vacío: en el submit final el
+     * campo que trae el valor depende del tema y del estado del checkbox. El valor
+     * "0" (o "false"/"no") del checkbox se trata como desactivado.
+     *
+     * @param array $data Campos ya des-slasheados.
+     * @return string Comuna saneada, o '' si no hay.
+     */
+    private function pick_city( $data ) {
+        if ( ! is_array( $data ) ) return '';
+
+        $flag      = $data['ship_to_different_address'] ?? '';
+        $ship_diff = ! empty( $flag ) && ! in_array( (string) $flag, [ '0', 'false', 'no' ], true );
+
+        $order = $ship_diff ? [ 'shipping_city', 'billing_city' ] : [ 'billing_city', 'shipping_city' ];
+        foreach ( $order as $field ) {
+            if ( ! empty( $data[ $field ] ) ) {
+                return sanitize_text_field( $data[ $field ] );
+            }
+        }
         return '';
     }
 
@@ -224,5 +252,37 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
         }
 
         return (float) $subtotal;
+    }
+
+    /**
+     * Registra, SOLO cuando había datos de dirección pero no se pudo resolver la
+     * comuna, qué información llegó. No vuelca valores (datos personales del
+     * cliente): solo nombres de campos, para diagnosticar en
+     * WooCommerce → Estado → Registros. Si no hay dirección todavía (ej. página
+     * del carrito) no registra nada: no es un fallo.
+     *
+     * @param array $package Paquete de envío de WooCommerce.
+     * @return void
+     */
+    private function log_unresolved_city( $package ) {
+        if ( ! function_exists( 'wc_get_logger' ) ) return;
+
+        // phpcs:disable WordPress.Security.NonceVerification.Missing
+        $address_present = isset( $_POST['post_data'] )
+            || ! empty( $_POST['shipping_city'] )
+            || ! empty( $_POST['billing_city'] );
+        if ( ! $address_present ) return;
+
+        $post_keys = array_map( 'sanitize_key', array_keys( $_POST ) );
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
+
+        wc_get_logger()->warning(
+            sprintf(
+                'HUPKEC: había datos de dirección pero no se pudo resolver la comuna para el envío. package_city=%s, post_keys=%s',
+                empty( $package['destination']['city'] ) ? 'no' : 'si',
+                implode( ',', $post_keys )
+            ),
+            [ 'source' => 'hup-kit-ecommerce-chile' ]
+        );
     }
 }

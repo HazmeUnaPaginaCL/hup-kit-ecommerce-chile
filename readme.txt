@@ -5,7 +5,7 @@ Requires at least: 6.0
 Tested up to: 7.0
 Requires Plugins: woocommerce
 Requires PHP: 8.0
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -103,6 +103,9 @@ Not yet. This version supports the classic (shortcode) Checkout only, and declar
 
 == Changelog ==
 
+= 1.1.1 =
+* Fixed: orders with shipping could fail at checkout with "No shipping method has been selected" when the comuna was sent in a field the plugin did not read in that context.
+
 = 1.1.0 =
 * Fixed: a critical error could appear when deleting the plugin. Uninstalling now completes cleanly even if WooCommerce is not fully loaded.
 * Fixed: the plugin no longer triggers a fatal error when WooCommerce is inactive; it shows an admin notice instead.
@@ -124,6 +127,9 @@ Not yet. This version supports the classic (shortcode) Checkout only, and declar
 * HPOS compatible. Classic Checkout only.
 
 == Upgrade Notice ==
+
+= 1.1.1 =
+Fixes orders being rejected at checkout with "No shipping method has been selected". Recommended update.
 
 = 1.1.0 =
 Fixes a critical error that could appear when removing the plugin and prevents fatal errors when WooCommerce is inactive. Recommended update.
