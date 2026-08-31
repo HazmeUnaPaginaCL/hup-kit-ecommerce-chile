@@ -41,3 +41,25 @@ wp-plugins-*.po
 # Archivos internos de desarrollo - estrategia de negocio, no van al repo público
 CLAUDE.md
 TASKS.md
+
+# Configuración local del editor
+.vscode/
+.idea/
+
+# Configuración local de Claude Code
+.claude/
+
+# Exports de traducción (regenerables)
+wp-plugins-*.po
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Empaquetado
+*.zip
+node_modules/
+
+# Documentos internos — estrategia de negocio
+CLAUDE.md
+TASKS.md
