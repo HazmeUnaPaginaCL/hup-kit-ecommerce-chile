@@ -181,7 +181,7 @@ class HUPKEC_Billing {
                                 <option value=""><?php esc_html_e( 'Selecciona una región...', 'hup-kit-ecommerce-chile' ); ?></option>
                                 <?php foreach ( $regions as $code => $name ): ?>
                                 <option value="<?php echo esc_attr($code); ?>"
-                                    <?php selected( $val('billing_region_empresa'), $code ); ?>>
+                                    <?php selected( hupkec_normalize_region( $val('billing_region_empresa') ), $code ); ?>>
                                     <?php echo esc_html($name); ?>
                                 </option>
                                 <?php endforeach; ?>
@@ -232,7 +232,7 @@ class HUPKEC_Billing {
             wp_send_json_error( 'Nonce inválido', 403 );
         }
 
-        $region = sanitize_text_field( wp_unslash( $_POST['region'] ?? '' ) );
+        $region = hupkec_normalize_region( sanitize_text_field( wp_unslash( $_POST['region'] ?? '' ) ) );
         if ( ! $region ) wp_send_json_error( 'Sin región', 400 );
 
         $all     = HUPKEC_Settings::get_comunas();
@@ -379,7 +379,6 @@ class HUPKEC_Billing {
         $needs = $order->get_meta( '_hupkec_needs_invoice' );
         if ( $needs !== '1' ) return;
 
-        $regions = HUPKEC_Settings::get_regions();
 
         echo '<div class="hupkec-order-billing">';
         echo '<strong>Datos de facturación:</strong><br>';
@@ -399,7 +398,7 @@ class HUPKEC_Billing {
 
             // Resolver código de región a nombre legible (arregla pedidos guardados con código)
             if ( $meta_key === '_billing_region_empresa' ) {
-                $val = $regions[ $val ] ?? $val;
+                $val = hupkec_region_name( $val );
             }
 
             echo '<br><small><strong>' . esc_html( $label ) . ':</strong> ' . esc_html( $val ) . '</small>';
@@ -413,7 +412,6 @@ class HUPKEC_Billing {
     public function add_to_email( $fields, $sent_to_admin, $order ) {
         if ( $order->get_meta( '_hupkec_needs_invoice' ) !== '1' ) return $fields;
 
-        $regions = HUPKEC_Settings::get_regions();
 
         $campos = [
             '_billing_company_invoice'   => 'Empresa',
@@ -430,7 +428,7 @@ class HUPKEC_Billing {
 
             // Resolver código de región a nombre legible
             if ( $meta_key === '_billing_region_empresa' ) {
-                $val = $regions[ $val ] ?? $val;
+                $val = hupkec_region_name( $val );
             }
 
             $fields[ ltrim( $meta_key, '_' ) ] = [ 'label' => $label, 'value' => $val ];
@@ -448,7 +446,6 @@ class HUPKEC_Billing {
         $order = wc_get_order( $order_id );
         if ( ! $order || $order->get_meta( '_hupkec_needs_invoice' ) !== '1' ) return;
 
-        $regions = HUPKEC_Settings::get_regions();
 
         $campos = [
             '_billing_company_invoice'   => 'Empresa',
@@ -471,7 +468,7 @@ class HUPKEC_Billing {
             if ( ! $val ) continue;
 
             if ( $meta_key === '_billing_region_empresa' ) {
-                $val = $regions[ $val ] ?? $val;
+                $val = hupkec_region_name( $val );
             }
 
             echo '<tr>';
@@ -500,7 +497,7 @@ class HUPKEC_Billing {
         $saved_comuna = '';
         $user_id = get_current_user_id();
         if ( $user_id && get_user_meta( $user_id, 'hupkec_needs_invoice', true ) === '1' ) {
-            $saved_region = (string) get_user_meta( $user_id, 'billing_region_empresa', true );
+            $saved_region = hupkec_normalize_region( (string) get_user_meta( $user_id, 'billing_region_empresa', true ) );
             $saved_comuna = (string) get_user_meta( $user_id, 'billing_comuna_empresa', true );
         }
 

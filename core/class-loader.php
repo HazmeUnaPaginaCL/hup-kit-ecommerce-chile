@@ -6,7 +6,11 @@ class HUPKEC_Loader {
     public function __construct() {
         // Cargar datos territoriales
         require_once HUPKEC_PATH . 'assets/data/regiones-comunas.php';
-        
+
+        // Migrar datos guardados por versiones anteriores (necesita los datos
+        // territoriales recién cargados para traducir los códigos de región).
+        hupkec_maybe_upgrade_data();
+
         // Core siempre carga
         require_once HUPKEC_PATH . 'core/class-settings.php';
         require_once HUPKEC_PATH . 'core/class-frontend.php';
@@ -70,6 +74,12 @@ class HUPKEC_Loader {
         }
         
         update_option( 'hupkec_modules', $modules );
+
+        // Encender o apagar "Zonas de despacho" cambia las tarifas: sin esto,
+        // WooCommerce seguía mostrando las guardadas en la sesión del cliente.
+        if ( class_exists( 'HUPKEC_Shipping' ) ) {
+            HUPKEC_Shipping::flush_rates_cache();
+        }
 
         if ( function_exists( 'wc_get_logger' ) ) {
             $user   = wp_get_current_user();

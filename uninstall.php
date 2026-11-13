@@ -24,6 +24,8 @@ $hupkec_options = array(
     'hupkec_zones',
     'hupkec_wc_global_zone_created',
     'hupkec_billing_module',
+    'hupkec_data_version',
+    'hupkec_version',
 );
 
 foreach ( $hupkec_options as $hupkec_opt ) {

@@ -259,3 +259,118 @@ function hupkec_is_valid_rut( $rut ) {
     }
     return $dv === $check;
 }
+
+/**
+ * Convierte un código de región antiguo al formato de WooCommerce.
+ *
+ * Hasta la 1.1.1 el plugin usaba códigos propios de dos letras ('AT', 'RM');
+ * WooCommerce usa 'CL-AT', 'CL-RM'. Esa diferencia rompía las zonas nativas de
+ * WooCommerce por región y la compatibilidad con plugins de courier. Los
+ * pedidos y clientes antiguos conservan el código corto en la base de datos:
+ * esta función los traduce al leerlos, sin reescribir nada.
+ *
+ * @since 1.1.2
+ * @param string $code Código de región, antiguo o nuevo.
+ * @return string Código en formato 'CL-XX', o el valor original si no es una región chilena conocida.
+ */
+function hupkec_normalize_region( $code ) {
+    $code = is_string( $code ) ? strtoupper( trim( $code ) ) : '';
+    if ( preg_match( '/^[A-Z]{2}$/', $code ) ) {
+        $regions = hupkec_get_regions_base();
+        if ( isset( $regions[ 'CL-' . $code ] ) ) {
+            return 'CL-' . $code;
+        }
+    }
+    return $code;
+}
+
+/**
+ * Nombre legible de una región, aceptando códigos antiguos y nuevos.
+ *
+ * @since 1.1.2
+ * @param string $code Código de región.
+ * @return string Nombre de la región, o el código tal cual si no se reconoce.
+ */
+function hupkec_region_name( $code ) {
+    $regions = hupkec_get_regions_base();
+    $norm    = hupkec_normalize_region( (string) $code );
+    return $regions[ $norm ] ?? (string) $code;
+}
+
+/**
+ * ¿El plugin fija el país de esta sección del checkout en Chile?
+ *
+ * Ocurre cuando el editor de campos está activo y el campo país está
+ * habilitado: el cliente no elige país, la tienda despacha solo en Chile.
+ *
+ * @since 1.1.2
+ * @param string $section 'billing' o 'shipping'. Vacío = cualquiera de las dos.
+ * @return bool
+ */
+function hupkec_country_locked( $section = '' ) {
+    if ( ! hupkec_module_active( 'checkout' ) ) return false;
+
+    $sections = $section ? [ $section ] : [ 'billing', 'shipping' ];
+    foreach ( $sections as $sec ) {
+        foreach ( hupkec_get_fields( $sec ) as $f ) {
+            if ( ( $f['type'] ?? '' ) === 'country' && ! empty( $f['enabled'] ) ) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Migraciones de datos guardados entre versiones.
+ *
+ * Se ejecuta en cada carga, pero solo hace trabajo cuando la versión de datos
+ * guardada es menor que la actual: una lectura de opción autocargada y nada más.
+ *
+ * Versión 2 (1.1.2): códigos de región 'AT' → 'CL-AT' en hupkec_settings.
+ *
+ * @since 1.1.2
+ * @return void
+ */
+function hupkec_maybe_upgrade_data() {
+    // Cada actualización del plugin invalida las tarifas de envío guardadas en
+    // las sesiones: el cálculo puede haber cambiado y un cliente con el carrito
+    // abierto no debe quedarse con el resultado de la versión anterior.
+    if ( get_option( 'hupkec_version' ) !== HUPKEC_VERSION ) {
+        if ( class_exists( 'WC_Cache_Helper' ) ) {
+            WC_Cache_Helper::get_transient_version( 'shipping', true );
+        }
+        update_option( 'hupkec_version', HUPKEC_VERSION );
+    }
+
+    $current = 2;
+    $saved   = (int) get_option( 'hupkec_data_version', 1 );
+    if ( $saved >= $current ) return;
+
+    if ( $saved < 2 ) {
+        $settings = get_option( 'hupkec_settings', [] );
+        if ( is_array( $settings ) && $settings ) {
+            if ( ! empty( $settings['enabled_regions'] ) && is_array( $settings['enabled_regions'] ) ) {
+                $settings['enabled_regions'] = array_values( array_unique( array_map( 'hupkec_normalize_region', $settings['enabled_regions'] ) ) );
+            }
+            foreach ( [ 'enabled_comunas', 'custom_sectors' ] as $map ) {
+                if ( empty( $settings[ $map ] ) || ! is_array( $settings[ $map ] ) ) continue;
+                $migrated = [];
+                foreach ( $settings[ $map ] as $code => $value ) {
+                    $migrated[ hupkec_normalize_region( (string) $code ) ] = $value;
+                }
+                $settings[ $map ] = $migrated;
+            }
+            update_option( 'hupkec_settings', $settings );
+        }
+    }
+
+    update_option( 'hupkec_data_version', $current );
+
+    if ( function_exists( 'wc_get_logger' ) ) {
+        wc_get_logger()->info(
+            sprintf( 'HUPKEC: datos migrados de la versión %d a la %d (códigos de región CL-XX).', $saved, $current ),
+            [ 'source' => 'hup-kit-ecommerce-chile' ]
+        );
+    }
+}

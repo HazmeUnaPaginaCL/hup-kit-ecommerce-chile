@@ -10,8 +10,142 @@ class HUPKEC_Shipping {
         add_action( 'wp_ajax_hupkec_save_zone',        [ $this, 'ajax_save_zone'   ] );
         add_action( 'wp_ajax_hupkec_delete_zone',      [ $this, 'ajax_delete_zone' ] );
         add_action( 'wp_ajax_hupkec_get_zones',        [ $this, 'ajax_get_zones'   ] );
+        add_action( 'wp_ajax_hupkec_test_comuna',      [ $this, 'ajax_test_comuna' ] );
         // Solo verificar la zona en el admin — nunca en requests del frontend
         add_action( 'admin_init', [ __CLASS__, 'ensure_global_zone' ] );
+
+        // Completar el paquete de envío ANTES de que WooCommerce lo hashee.
+        add_filter( 'woocommerce_cart_shipping_packages', [ __CLASS__, 'prepare_packages' ], 20 );
+    }
+
+    /* =========================================================
+       CACHÉ DE TARIFAS DE WOOCOMMERCE
+
+       WooCommerce guarda las tarifas en la sesión del cliente y solo las
+       recalcula si cambia el hash del paquete (productos + dirección + versión
+       de caché de envíos). Todo lo que influye en nuestro cálculo tiene que
+       estar DENTRO del paquete o invalidar esa caché; si no, el cliente sigue
+       viendo el resultado anterior —típicamente "no hay métodos de envío"— y
+       solo el modo de depuración de WooCommerce, que se salta la caché, lo
+       hace aparecer.
+    ========================================================= */
+
+    /**
+     * Invalida las tarifas de envío guardadas en todas las sesiones.
+     *
+     * Se llama al cambiar cualquier ajuste que altere el cálculo: zonas,
+     * módulos, comunas, campos del checkout y actualizaciones del plugin.
+     *
+     * @since 1.1.2
+     * @return void
+     */
+    public static function flush_rates_cache() {
+        if ( class_exists( 'WC_Cache_Helper' ) ) {
+            WC_Cache_Helper::get_transient_version( 'shipping', true );
+        }
+    }
+
+    /**
+     * Completa cada paquete con lo que necesita nuestro cálculo.
+     *
+     * - País vacío → Chile. Un checkout personalizado que no envía el país
+     *   dejaba al cliente en "Resto del mundo", sin métodos de envío.
+     * - País fijo por el editor de campos → siempre Chile.
+     * - Comuna vacía en el destino → se resuelve del formulario, para que el
+     *   cambio de comuna cambie el hash y WooCommerce recalcule.
+     * - 'hupkec' resume el estado del módulo: encenderlo o apagarlo cambia el
+     *   hash aunque la caché de WooCommerce no se haya invalidado.
+     *
+     * @since 1.1.2
+     * @param array $packages Paquetes del carrito.
+     * @return array
+     */
+    public static function prepare_packages( $packages ) {
+        if ( ! is_array( $packages ) ) return $packages;
+
+        $active = hupkec_module_active( 'shipping' );
+        $locked = hupkec_country_locked();
+
+        foreach ( $packages as $i => $package ) {
+            if ( ! is_array( $package ) ) continue;
+            $dest = $package['destination'] ?? [];
+
+            if ( $locked || ( $active && empty( $dest['country'] ) ) ) {
+                $dest['country'] = 'CL';
+            }
+            if ( ( $dest['country'] ?? '' ) === 'CL' ) {
+                if ( ! empty( $dest['state'] ) ) {
+                    $dest['state'] = hupkec_normalize_region( $dest['state'] );
+                }
+                if ( $active && empty( $dest['city'] ) ) {
+                    $dest['city'] = self::resolve_city_from_request();
+                }
+            }
+
+            $packages[ $i ]['destination'] = $dest;
+            $packages[ $i ]['hupkec']      = $active ? 'on' : 'off';
+        }
+        return $packages;
+    }
+
+    /**
+     * Comuna del cliente cuando el destino del paquete no la trae.
+     *
+     *   - En 'update_order_review' WooCommerce envía el formulario serializado
+     *     en $_POST['post_data']; en el submit final (?wc-ajax=checkout) los
+     *     campos llegan sueltos.
+     *   - Según "Enviar a una dirección diferente", la comuna real puede venir
+     *     en shipping_city o en billing_city.
+     *
+     * @since 1.1.2 (antes vivía en HUPKEC_Shipping_Method::get_customer_city)
+     * @return string Comuna saneada, o '' si no hay.
+     */
+    public static function resolve_city_from_request() {
+        // Estos datos llegan durante el cálculo de envío de WooCommerce, que
+        // gestiona su propio flujo y nonce. Solo leemos la comuna y la sanitizamos.
+        // phpcs:disable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $post_data_str = isset( $_POST['post_data'] ) ? wp_unslash( $_POST['post_data'] ) : '';
+        if ( $post_data_str && is_string( $post_data_str ) ) {
+            $post_data = [];
+            wp_parse_str( $post_data_str, $post_data );
+            $city = self::pick_city( $post_data );
+            if ( $city !== '' ) return $city;
+        }
+
+        $city = self::pick_city( wp_unslash( $_POST ) );
+        if ( $city !== '' ) return $city;
+        // phpcs:enable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+        if ( function_exists( 'WC' ) && WC()->customer ) {
+            $city = WC()->customer->get_shipping_city() ?: WC()->customer->get_billing_city();
+            if ( $city ) return sanitize_text_field( $city );
+        }
+        return '';
+    }
+
+    /**
+     * Elige la comuna de un conjunto de campos (shipping_city / billing_city).
+     *
+     * Prioriza shipping_city si el cliente eligió enviar a otra dirección, pero
+     * SIEMPRE cae al otro campo si el preferido viene vacío. El valor "0" (o
+     * "false"/"no") del checkbox se trata como desactivado.
+     *
+     * @param array $data Campos ya des-slasheados.
+     * @return string Comuna saneada, o '' si no hay.
+     */
+    public static function pick_city( $data ) {
+        if ( ! is_array( $data ) ) return '';
+
+        $flag      = $data['ship_to_different_address'] ?? '';
+        $ship_diff = ! empty( $flag ) && ! in_array( (string) $flag, [ '0', 'false', 'no' ], true );
+
+        $order = $ship_diff ? [ 'shipping_city', 'billing_city' ] : [ 'billing_city', 'shipping_city' ];
+        foreach ( $order as $field ) {
+            if ( ! empty( $data[ $field ] ) && is_string( $data[ $field ] ) ) {
+                return sanitize_text_field( $data[ $field ] );
+            }
+        }
+        return '';
     }
 
     /* =========================================================
@@ -312,6 +446,84 @@ class HUPKEC_Shipping {
             }
         }
         wp_send_json_success();
+    }
+
+    /* =========================================================
+       PROBAR COMUNA (AJAX) — diagnóstico desde el panel
+    ========================================================= */
+    /**
+     * Simula el cálculo de envío para una comuna y revisa la configuración que
+     * WooCommerce necesita para ofrecerlo. Es lo primero que hay que mirar
+     * cuando una tienda reporta "no hay métodos de envío".
+     *
+     * @since 1.1.2
+     */
+    public function ajax_test_comuna() {
+        check_ajax_referer( 'hupkec_admin', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) wp_die();
+
+        $city     = sanitize_text_field( wp_unslash( $_POST['comuna'] ?? '' ) );
+        $subtotal = max( 0.0, floatval( $_POST['subtotal'] ?? 0 ) );
+        if ( $city === '' ) wp_send_json_error( 'Elige una comuna.' );
+
+        $checks = [];
+        $add    = function ( $ok, $label, $detail = '' ) use ( &$checks ) {
+            $checks[] = [ 'ok' => (bool) $ok, 'label' => $label, 'detail' => $detail ];
+        };
+
+        $active = hupkec_module_active( 'shipping' );
+        $add( $active, 'Módulo "Zonas de despacho" activo', $active ? '' : 'Actívalo en Inicio. Apagado, el método no ofrece tarifas.' );
+
+        $ship_countries = function_exists( 'WC' ) ? WC()->countries->get_shipping_countries() : [];
+        $ships_cl       = isset( $ship_countries['CL'] );
+        $add( $ships_cl, 'Chile está entre los países de envío', $ships_cl ? '' : 'Revisa WooCommerce → Ajustes → General → Ubicaciones de envío.' );
+
+        $package = [
+            'contents'        => [],
+            'contents_cost'   => $subtotal,
+            'applied_coupons' => [],
+            'user'            => [ 'ID' => get_current_user_id() ],
+            'destination'     => [ 'country' => 'CL', 'state' => '', 'postcode' => '', 'city' => $city, 'address' => '', 'address_1' => '', 'address_2' => '' ],
+        ];
+        $wc_zone   = WC_Shipping_Zones::get_zone_matching_package( $package );
+        $our_zone  = self::locate_global_zone();
+        $zone_ok   = $our_zone && $wc_zone->get_id() === $our_zone->get_id();
+        $add(
+            $zone_ok,
+            'WooCommerce asigna Chile a la zona del plugin',
+            $zone_ok ? $wc_zone->get_zone_name() : sprintf( 'Coincide con "%s". Una zona de WooCommerce más arriba en la lista puede estar capturando a Chile.', $wc_zone->get_zone_name() )
+        );
+
+        $method_ok = false;
+        foreach ( $wc_zone->get_shipping_methods( true ) as $m ) {
+            if ( $m->id === 'hupkec_shipping' ) { $method_ok = true; break; }
+        }
+        $add( $method_ok, 'El método de envío del plugin está habilitado en esa zona', $method_ok ? '' : 'Usa "Verificar / Recrear zona de envío".' );
+
+        $blocks = function_exists( 'has_block' ) && wc_get_page_id( 'checkout' ) > 0
+            && has_block( 'woocommerce/checkout', wc_get_page_id( 'checkout' ) );
+        $add( ! $blocks, 'El checkout es el clásico (no de bloques)', $blocks ? 'El checkout de bloques no es compatible. Usa el shortcode [woocommerce_checkout].' : '' );
+
+        $zone = self::get_zone_for_city( $city );
+        $add( (bool) $zone, 'La comuna pertenece a una zona de despacho', $zone ? $zone['name'] : 'Agrégala a una zona.' );
+
+        $result = null;
+        if ( $zone ) {
+            $type = $zone['cost_type'] ?? 'free';
+            $cost = 0.0;
+            if ( $type === 'fixed' ) {
+                $free_from = floatval( $zone['cost_free_from'] ?? 0 );
+                $cost      = ( $free_from > 0 && $subtotal >= $free_from ) ? 0.0 : floatval( $zone['cost_value'] ?? 0 );
+            }
+            $types  = self::get_cost_types();
+            $result = [
+                'zone'  => $zone['name'],
+                'type'  => $types[ $type ] ?? $type,
+                'cost'  => $type === 'cod' ? 'Por pagar al recibir' : ( $cost > 0 ? wp_strip_all_tags( wc_price( $cost ) ) : 'Gratis' ),
+            ];
+        }
+
+        wp_send_json_success( [ 'checks' => $checks, 'result' => $result ] );
     }
 
     /* =========================================================

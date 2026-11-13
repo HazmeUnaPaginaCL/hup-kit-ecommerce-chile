@@ -11,22 +11,22 @@ function hupkec_get_regions_base() {
 
     return [
 
-        'AP' => 'Región de Arica y Parinacota',
-        'TA' => 'Región de Tarapacá',
-        'AN' => 'Región de Antofagasta',
-        'AT' => 'Región de Atacama',
-        'CO' => 'Región de Coquimbo',
-        'VS' => 'Región de Valparaíso',
-        'RM' => 'Región Metropolitana de Santiago',
-        'LI' => 'Región del Libertador General Bernardo O\'Higgins',
-        'ML' => 'Región del Maule',
-        'NB' => 'Región de Ñuble',
-        'BI' => 'Región del Biobío',
-        'AR' => 'Región de La Araucanía',
-        'LR' => 'Región de Los Ríos',
-        'LL' => 'Región de Los Lagos',
-        'AI' => 'Región de Aysén del General Carlos Ibáñez del Campo',
-        'MA' => 'Región de Magallanes y de la Antártica Chilena',
+        'CL-AP' => 'Región de Arica y Parinacota',
+        'CL-TA' => 'Región de Tarapacá',
+        'CL-AN' => 'Región de Antofagasta',
+        'CL-AT' => 'Región de Atacama',
+        'CL-CO' => 'Región de Coquimbo',
+        'CL-VS' => 'Región de Valparaíso',
+        'CL-RM' => 'Región Metropolitana de Santiago',
+        'CL-LI' => 'Región del Libertador General Bernardo O\'Higgins',
+        'CL-ML' => 'Región del Maule',
+        'CL-NB' => 'Región de Ñuble',
+        'CL-BI' => 'Región del Biobío',
+        'CL-AR' => 'Región de La Araucanía',
+        'CL-LR' => 'Región de Los Ríos',
+        'CL-LL' => 'Región de Los Lagos',
+        'CL-AI' => 'Región de Aysén del General Carlos Ibáñez del Campo',
+        'CL-MA' => 'Región de Magallanes y de la Antártica Chilena',
     ];
 }
 
@@ -38,7 +38,7 @@ function hupkec_get_comunas_base() {
            ARICA Y PARINACOTA
         ========================= */
 
-        'AP' => [
+        'CL-AP' => [
             'Arica',
             'Camarones',
             'Putre',
@@ -49,7 +49,7 @@ function hupkec_get_comunas_base() {
            TARAPACÁ
         ========================= */
 
-        'TA' => [
+        'CL-TA' => [
             'Iquique',
             'Alto Hospicio',
             'Pozo Almonte',
@@ -63,7 +63,7 @@ function hupkec_get_comunas_base() {
            ANTOFAGASTA
         ========================= */
 
-        'AN' => [
+        'CL-AN' => [
             'Antofagasta',
             'Mejillones',
             'Sierra Gorda',
@@ -79,7 +79,7 @@ function hupkec_get_comunas_base() {
            ATACAMA
         ========================= */
 
-        'AT' => [
+        'CL-AT' => [
             'Copiapó',
             'Caldera',
             'Tierra Amarilla',
@@ -95,7 +95,7 @@ function hupkec_get_comunas_base() {
            COQUIMBO
         ========================= */
 
-        'CO' => [
+        'CL-CO' => [
             'La Serena',
             'Coquimbo',
             'Andacollo',
@@ -117,7 +117,7 @@ function hupkec_get_comunas_base() {
            VALPARAÍSO
         ========================= */
 
-        'VS' => [
+        'CL-VS' => [
             'Valparaíso',
             'Viña del Mar',
             'Concón',
@@ -162,7 +162,7 @@ function hupkec_get_comunas_base() {
            METROPOLITANA
         ========================= */
 
-        'RM' => [
+        'CL-RM' => [
             'Santiago',
             'Cerrillos',
             'Cerro Navia',
@@ -221,7 +221,7 @@ function hupkec_get_comunas_base() {
            O'HIGGINS
         ========================= */
 
-        'LI' => [
+        'CL-LI' => [
             'Rancagua',
             'Codegua',
             'Coinco',
@@ -261,7 +261,7 @@ function hupkec_get_comunas_base() {
            MAULE
         ========================= */
 
-        'ML' => [
+        'CL-ML' => [
             'Talca',
             'Constitución',
             'Curepto',
@@ -298,7 +298,7 @@ function hupkec_get_comunas_base() {
            ÑUBLE
         ========================= */
 
-        'NB' => [
+        'CL-NB' => [
             'Bulnes',
             'Chillán',
             'Chillán Viejo',
@@ -326,7 +326,7 @@ function hupkec_get_comunas_base() {
            BIOBÍO
         ========================= */
 
-        'BI' => [
+        'CL-BI' => [
             'Concepción',
             'Coronel',
             'Chiguayante',
@@ -366,7 +366,7 @@ function hupkec_get_comunas_base() {
            ARAUCANÍA
         ========================= */
 
-        'AR' => [
+        'CL-AR' => [
             'Temuco',
             'Carahue',
             'Cunco',
@@ -405,7 +405,7 @@ function hupkec_get_comunas_base() {
            LOS RÍOS
         ========================= */
 
-        'LR' => [
+        'CL-LR' => [
             'Valdivia',
             'Corral',
             'Lanco',
@@ -424,7 +424,7 @@ function hupkec_get_comunas_base() {
            LOS LAGOS
         ========================= */
 
-        'LL' => [
+        'CL-LL' => [
             'Puerto Montt',
             'Calbuco',
             'Cochamó',
@@ -461,7 +461,7 @@ function hupkec_get_comunas_base() {
            AYSÉN
         ========================= */
 
-        'AI' => [
+        'CL-AI' => [
             'Coyhaique',
             'Lago Verde',
             'Aysén',
@@ -478,7 +478,7 @@ function hupkec_get_comunas_base() {
            MAGALLANES
         ========================= */
 
-        'MA' => [
+        'CL-MA' => [
             'Punta Arenas',
             'Laguna Blanca',
             'Río Verde',

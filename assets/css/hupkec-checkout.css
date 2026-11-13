@@ -15,10 +15,20 @@
 .woocommerce-checkout #billing_city.select:focus,
 .woocommerce-checkout #shipping_city.select:focus { border-color: #999; outline: none; }
 
-/* País estático */
-.hupkec-country-static { margin-bottom: 1em; }
-.hupkec-country-static label { display: block; font-size: 0.857em; font-weight: 600; margin-bottom: 4px; }
-.hupkec-country-value { display: block; padding: 8px 0; font-size: 1em; font-weight: 400; }
+/* País fijo en Chile: WooCommerce lo pinta como país único (select de una
+   opción). Respaldo para temas y constructores que no cargan forms.css de
+   WooCommerce: se ve como texto, no como un desplegable. */
+.woocommerce-checkout .country_to_state--single {
+    appearance: none;
+    -webkit-appearance: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    font-weight: 600;
+    color: inherit;
+    pointer-events: none;
+}
 
 /* Error RUT */
 .hupkec-rut-error {

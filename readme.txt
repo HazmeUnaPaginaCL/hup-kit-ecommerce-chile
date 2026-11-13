@@ -5,7 +5,7 @@ Requires at least: 6.0
 Tested up to: 7.0
 Requires Plugins: woocommerce
 Requires PHP: 8.0
-Stable tag: 1.1.1
+Stable tag: 1.1.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -103,6 +103,14 @@ Not yet. This version supports the classic (shortcode) Checkout only, and declar
 
 == Changelog ==
 
+= 1.1.2 =
+* Fixed: the checkout could show "There are no shipping options available" even with zones configured. WooCommerce kept reusing shipping rates cached in the customer's session. The plugin now refreshes them when modules, zones, comunas or checkout fields change and after each update, and the selected comuna is part of the shipping package, so changing it always recalculates.
+* Fixed: with the checkout field editor active, custom checkout templates (page builders) could send an empty country, which placed the customer in the "Rest of the world" zone. Chile is now shown as the only country and enforced on the server.
+* Fixed: "Cash on delivery" zones were labeled "Free shipping" at checkout. They now read "Por pagar al recibir".
+* Changed: Chilean regions now use WooCommerce's standard codes (CL-AT, CL-RM…). Saved settings are migrated automatically and existing orders and customers keep displaying correctly. Region-based WooCommerce shipping zones and courier plugins that rely on these codes now work.
+* Fixed: the shipping method title can now be edited from the WooCommerce shipping zone.
+* Improved: WooCommerce admin screens (store address, shipping zones, order editing) list every region even when the region filter is on.
+
 = 1.1.1 =
 * Fixed: orders with shipping could fail at checkout with "No shipping method has been selected" when the comuna was sent in a field the plugin did not read in that context.
 
@@ -127,6 +135,9 @@ Not yet. This version supports the classic (shortcode) Checkout only, and declar
 * HPOS compatible. Classic Checkout only.
 
 == Upgrade Notice ==
+
+= 1.1.2 =
+Fixes stores where the checkout showed no shipping options. Regions now use WooCommerce's standard codes; saved settings are migrated automatically. Recommended update.
 
 = 1.1.1 =
 Fixes orders being rejected at checkout with "No shipping method has been selected". Recommended update.

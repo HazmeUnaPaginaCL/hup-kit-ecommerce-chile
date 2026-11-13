@@ -10,7 +10,8 @@ class HUPKEC_Checkout {
          *   en vez de sobreescribir — WC no detecta cambio, no recalcula.
          * - NUNCA filtrar woocommerce_get_country_locale (causa loop infinito).
          * - El control real de campos va en billing_fields / shipping_fields.
-         * - País se renderiza como texto estático vía woocommerce_checkout_fields.
+         * - País fijo en Chile: WooCommerce lo pinta como país único (ver
+         *   lock_country_args) y el servidor lo fuerza en los datos enviados.
          */
         add_filter( 'woocommerce_get_country_locale_default', [ $this, 'strip_locale_overrides' ], 9999 );
         add_filter( 'woocommerce_get_country_locale_base',    [ $this, 'strip_locale_overrides' ], 9999 );
@@ -19,9 +20,10 @@ class HUPKEC_Checkout {
         add_filter( 'woocommerce_shipping_fields', [ $this, 'apply_shipping_fields' ], 9999, 2 );
         add_filter( 'woocommerce_checkout_fields', [ $this, 'apply_checkout_fields' ], 9999 );
 
-        // País estático en el checkout
-        add_action( 'woocommerce_before_checkout_billing_form',  [ $this, 'render_country_static_billing'  ] );
-        add_action( 'woocommerce_before_checkout_shipping_form', [ $this, 'render_country_static_shipping' ] );
+        // País fijo en Chile
+        add_filter( 'woocommerce_form_field_args',      [ $this, 'lock_country_args' ], 10, 3 );
+        add_filter( 'woocommerce_form_field_country',   [ $this, 'unlock_country_list' ], 10, 2 );
+        add_filter( 'woocommerce_checkout_posted_data', [ $this, 'force_posted_country' ] );
 
         add_action( 'woocommerce_checkout_process',           [ $this, 'validate_custom_fields' ] );
         // Hook actualizado — woocommerce_checkout_create_order reemplaza a
@@ -56,34 +58,78 @@ class HUPKEC_Checkout {
     }
 
     /* =========================================================
-       PAÍS ESTÁTICO — ocultar el campo select y mostrar texto
+       PAÍS FIJO EN CHILE
+
+       Antes se quitaba el campo país y se pintaba "Chile" como texto aparte,
+       ocultando el select nativo por CSS. Eso dependía de que el tema o el
+       constructor (Bricks, Elementor…) disparara el hook donde se pintaba el
+       texto y conservara el select oculto. Cuando no lo hacía, el país llegaba
+       vacío, WooCommerce asignaba al cliente la zona "Resto del mundo" y el
+       checkout decía que no había métodos de envío.
+
+       Ahora el campo país se queda donde WooCommerce lo pone, pero se pinta
+       como país único: WooCommerce ya sabe hacerlo cuando la tienda vende a un
+       solo país (muestra "Chile" en texto y mantiene #billing_country = CL).
+       La lista se limita a Chile SOLO mientras se pinta ese campo.
     ========================================================= */
-    public function render_country_static_billing() {
-        $this->render_country_static( 'billing' );
-    }
-    public function render_country_static_shipping() {
-        $this->render_country_static( 'shipping' );
+
+    /**
+     * Antes de pintar el campo país, limita la lista de países a Chile.
+     *
+     * @since 1.1.2
+     */
+    public function lock_country_args( $args, $key, $value ) {
+        if ( ! in_array( $key, [ 'billing_country', 'shipping_country' ], true ) ) return $args;
+
+        $section = strpos( $key, 'billing_' ) === 0 ? 'billing' : 'shipping';
+        if ( ! hupkec_country_locked( $section ) ) return $args;
+
+        add_filter( 'woocommerce_countries_allowed_countries',  [ __CLASS__, 'only_chile' ], 9999 );
+        add_filter( 'woocommerce_countries_shipping_countries', [ __CLASS__, 'only_chile' ], 9999 );
+        return $args;
     }
 
-    private function render_country_static( $section ) {
-        // Solo ocultar el select de país si el módulo de checkout está activo
-        if ( ! hupkec_module_active( 'checkout' ) ) return;
+    /**
+     * Una vez pintado el campo país, devuelve la lista de países a la normalidad.
+     *
+     * @since 1.1.2
+     */
+    public function unlock_country_list( $field, $key ) {
+        remove_filter( 'woocommerce_countries_allowed_countries',  [ __CLASS__, 'only_chile' ], 9999 );
+        remove_filter( 'woocommerce_countries_shipping_countries', [ __CLASS__, 'only_chile' ], 9999 );
+        return $field;
+    }
 
-        $fields = hupkec_get_fields( $section );
-        foreach ( $fields as $f ) {
-            if ( $f['type'] !== 'country' || empty( $f['enabled'] ) ) continue;
-            ?>
-            <p class="form-row form-row-wide hupkec-country-static">
-                <label><?php echo esc_html( $f['label'] ); ?> <abbr class="required" title="obligatorio">*</abbr></label>
-                <span class="hupkec-country-value">Chile</span>
-            </p>
-            <?php
-            // El select de país nativo de WooCommerce se oculta con una regla CSS
-            // encolada en HUPKEC_Frontend::enqueue_assets (wp_add_inline_style), no
-            // con un <style> incrustado aquí — así lo exigen las normas de
-            // WordPress.org sobre encolado de estilos.
-            break;
+    /**
+     * @since 1.1.2
+     * @return array<string,string>
+     */
+    public static function only_chile( $countries ) {
+        $name = is_array( $countries ) && isset( $countries['CL'] ) ? $countries['CL'] : 'Chile';
+        return [ 'CL' => $name ];
+    }
+
+    /**
+     * Al confirmar el pedido, fuerza Chile en las secciones con el país fijo.
+     *
+     * Es la red de seguridad si el formulario no llegó a enviar el país (un
+     * checkout personalizado que no pinta el campo, por ejemplo).
+     *
+     * @since 1.1.2
+     * @param array $data Datos del checkout ya procesados por WooCommerce.
+     * @return array
+     */
+    public function force_posted_country( $data ) {
+        foreach ( [ 'billing', 'shipping' ] as $section ) {
+            if ( hupkec_country_locked( $section ) && array_key_exists( "{$section}_country", $data ) ) {
+                $data[ "{$section}_country" ] = 'CL';
+            }
         }
+        // Si no se envía a otra dirección, WooCommerce copia la de facturación.
+        if ( hupkec_country_locked( 'billing' ) && empty( $data['ship_to_different_address'] ) && array_key_exists( 'shipping_country', $data ) ) {
+            $data['shipping_country'] = 'CL';
+        }
+        return $data;
     }
 
     /* =========================================================
@@ -111,16 +157,15 @@ class HUPKEC_Checkout {
             $key  = $field['key'];
             $type = $field['type'];
 
-            // País: si el módulo checkout está activo, eliminamos el campo nativo
-            // y mostramos el estático mediante render_country_static_billing/shipping
+            // País: el campo nativo se conserva SIEMPRE —WooCommerce lo necesita
+            // para asignar la zona de envío—. Si está habilitado, lock_country_args
+            // hace que se pinte como país único ("Chile" en texto).
             if ( $type === 'country' ) {
-                if ( hupkec_module_active( 'checkout' ) && ! empty( $field['enabled'] ) ) {
-                    // No incluir el campo nativo - se mostrará el estático
-                    $priority += 10;
-                    continue;
-                }
                 if ( isset( $wc_fields[ $key ] ) ) {
                     $wc_fields[ $key ]['priority'] = $priority;
+                    if ( ! empty( $field['enabled'] ) && ! empty( $field['label'] ) ) {
+                        $wc_fields[ $key ]['label'] = $field['label'];
+                    }
                     $result[ $key ] = $wc_fields[ $key ];
                 }
                 $priority += 10;
@@ -660,6 +705,8 @@ class HUPKEC_Checkout {
             }
         }
         update_option( 'hupkec_fields', $clean , false );
+        // Cambiar el campo país (fijo o no) cambia el destino de los envíos.
+        if ( class_exists( 'HUPKEC_Shipping' ) ) HUPKEC_Shipping::flush_rates_cache();
         wp_send_json_success();
     }
 
@@ -668,6 +715,7 @@ class HUPKEC_Checkout {
         if ( ! current_user_can( 'manage_woocommerce' ) ) wp_die();
         $d = hupkec_default_fields();
         update_option( 'hupkec_fields', $d , false );
+        if ( class_exists( 'HUPKEC_Shipping' ) ) HUPKEC_Shipping::flush_rates_cache();
         wp_send_json_success( $d );
     }
 }

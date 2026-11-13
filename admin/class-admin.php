@@ -137,6 +137,7 @@ class HUPKEC_Admin {
         // si no existe, la crea desde cero.
         delete_transient( 'hupkec_zone_verified' );
         HUPKEC_Shipping::ensure_global_zone();
+        HUPKEC_Shipping::flush_rates_cache();
 
         if ( ! HUPKEC_Shipping::zone_exists() ) {
             wp_send_json_error( 'No se pudo crear la zona. Asegúrate de que WooCommerce está activo.' );
@@ -216,6 +217,9 @@ class HUPKEC_Admin {
         // lógica de sanitización y no divergen en el futuro.
         $clean_settings = $this->sanitize_settings_option( $raw_settings );
         update_option( 'hupkec_settings', $clean_settings, false );
+        // Las comunas activas cambian lo que el cliente puede elegir: invalidar
+        // las tarifas guardadas en las sesiones.
+        if ( class_exists( 'HUPKEC_Shipping' ) ) HUPKEC_Shipping::flush_rates_cache();
 
         // Limpiar caché de envío
         if ( class_exists( 'WC_Cache_Helper' ) ) {

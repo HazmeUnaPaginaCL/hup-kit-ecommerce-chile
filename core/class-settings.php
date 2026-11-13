@@ -3,6 +3,37 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 class HUPKEC_Settings {
 
+    public function __construct() {
+        // Pedidos y clientes guardados antes de la 1.1.2 tienen la región con el
+        // código corto ('AT'). Se traduce al leerla —direcciones formateadas,
+        // correos, etiquetas, checkout precargado— sin reescribir la base de datos.
+        foreach ( [ 'order', 'customer' ] as $object ) {
+            foreach ( [ 'billing', 'shipping' ] as $section ) {
+                add_filter( "woocommerce_{$object}_get_{$section}_state", [ __CLASS__, 'normalize_legacy_state' ], 10, 2 );
+            }
+        }
+    }
+
+    /**
+     * Traduce un código de región antiguo, solo si la dirección es de Chile.
+     *
+     * @since 1.1.2
+     * @param string        $state  Región guardada.
+     * @param WC_Data|mixed $object Pedido o cliente.
+     * @return string
+     */
+    public static function normalize_legacy_state( $state, $object = null ) {
+        if ( ! is_string( $state ) || strlen( $state ) !== 2 ) return $state;
+        if ( ! is_object( $object ) ) return $state;
+
+        $filter  = current_filter();
+        $section = strpos( $filter, '_shipping_state' ) !== false ? 'shipping' : 'billing';
+        $getter  = "get_{$section}_country";
+        if ( ! method_exists( $object, $getter ) || $object->{$getter}() !== 'CL' ) return $state;
+
+        return hupkec_normalize_region( $state );
+    }
+
     public static function get_regions() {
         $all = hupkec_get_regions_base();
         $settings = get_option( 'hupkec_settings', [] );

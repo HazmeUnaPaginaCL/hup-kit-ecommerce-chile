@@ -21,7 +21,12 @@ class HUPKEC_Frontend {
     }
 
     public function filter_regions( $states ) {
-        $states['CL'] = HUPKEC_Settings::get_regions();
+        // En las pantallas del admin (dirección de la tienda, zonas de envío de
+        // WooCommerce, edición de pedidos) se ofrecen todas las regiones: el
+        // filtro de regiones activas es solo para lo que ve el cliente.
+        $states['CL'] = ( is_admin() && ! wp_doing_ajax() )
+            ? hupkec_get_regions_base()
+            : HUPKEC_Settings::get_regions();
         return $states;
     }
 
@@ -81,7 +86,9 @@ class HUPKEC_Frontend {
             wp_send_json_error( 'Nonce inválido', 403 );
         }
 
-        $region  = sanitize_text_field( wp_unslash( $_POST['region'] ?? '' ) );
+        // Normalizar: un navegador con la página cacheada de antes de la 1.1.2
+        // todavía puede enviar el código corto ('AT').
+        $region  = hupkec_normalize_region( sanitize_text_field( wp_unslash( $_POST['region'] ?? '' ) ) );
         if ( ! $region ) wp_send_json_error( 'Sin región' );
 
         $all     = HUPKEC_Settings::get_comunas();
@@ -157,26 +164,7 @@ class HUPKEC_Frontend {
             [],
             HUPKEC_VERSION
         );
-
-        // Cuando el módulo de checkout está activo, el país se muestra fijo como
-        // "Chile" (ver HUPKEC_Checkout::render_country_static) y hay que ocultar el
-        // select nativo de WooCommerce. Se hace con wp_add_inline_style —no con un
-        // <style> incrustado en el HTML— para cumplir las normas de WordPress.org.
-        // Solo se oculta la sección cuyo campo país esté habilitado, replicando la
-        // misma condición que usa render_country_static.
-        if ( hupkec_module_active( 'checkout' ) ) {
-            $hide = [];
-            foreach ( [ 'billing', 'shipping' ] as $section ) {
-                foreach ( hupkec_get_fields( $section ) as $f ) {
-                    if ( ( $f['type'] ?? '' ) === 'country' && ! empty( $f['enabled'] ) ) {
-                        $hide[] = '#' . $section . '_country_field';
-                        break;
-                    }
-                }
-            }
-            if ( $hide ) {
-                wp_add_inline_style( 'hupkec-style', implode( ',', $hide ) . '{display:none!important;}' );
-            }
-        }
+        // El país fijo en Chile ya no se oculta por CSS: lo pinta WooCommerce
+        // como país único (ver HUPKEC_Checkout::lock_country_args).
     }
 }

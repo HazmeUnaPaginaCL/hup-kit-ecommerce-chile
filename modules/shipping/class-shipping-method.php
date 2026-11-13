@@ -8,7 +8,7 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
         $this->instance_id        = absint( $instance_id );
         $this->method_title       = 'HUP - Kit Ecommerce Chile';
         $this->method_description = 'Calcula el costo de envío según la comuna elegida, basado en las zonas configuradas en HUP - Kit Ecommerce Chile.';
-        $this->supports           = [ 'shipping-zones', 'instance-settings' ];
+        $this->supports           = [ 'shipping-zones', 'instance-settings', 'instance-settings-modal' ];
         $this->enabled            = 'yes';
         parent::__construct( $instance_id );
         $this->init();
@@ -18,6 +18,8 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
         $this->init_form_fields();
         $this->init_settings();
         $this->title = $this->get_option( 'title', 'Envío' );
+        // Los ajustes por instancia los guarda WooCommerce desde el modal de la
+        // zona; esta acción cubre la pantalla de ajustes globales del método.
         add_action( 'woocommerce_update_options_shipping_' . $this->id, [ $this, 'process_admin_options' ] );
     }
 
@@ -43,7 +45,11 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
             $fields = array_merge( $filtered, $fields );
         }
 
-        $this->form_fields = $fields;
+        // El método declara 'instance-settings': WooCommerce pinta y guarda en el
+        // modal de la zona los instance_form_fields. Con solo form_fields (globales)
+        // el modal "Editar" del método salía vacío y el título no se podía cambiar.
+        $this->instance_form_fields = $fields;
+        $this->form_fields          = $fields;
     }
 
     public function calculate_shipping( $package = [] ) {
@@ -65,10 +71,13 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
         $cost = $this->get_zone_cost( $zone, $package );
         if ( $cost === false ) return;
 
-        // Si el costo es 0, mostrar "Envío Gratis" en el label
+        // "Por pagar" también cuesta 0 en el carrito, pero NO es gratis: el
+        // cliente paga al recibir. Etiquetarlo "Envío gratis" era engañoso.
         $label = $zone['name'];
-        if ( $cost == 0 ) {
-            $label .= ' — Envío Gratis';
+        if ( ( $zone['cost_type'] ?? '' ) === 'cod' ) {
+            $label .= ' — ' . __( 'Por pagar al recibir', 'hup-kit-ecommerce-chile' );
+        } elseif ( (float) $cost === 0.0 ) {
+            $label .= ' — ' . __( 'Envío gratis', 'hup-kit-ecommerce-chile' );
         }
 
         $args = [
@@ -107,79 +116,20 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
     }
 
     /**
-     * Obtiene la comuna del cliente desde varias fuentes.
+     * Comuna del cliente.
      *
-     * El valor puede llegar en distintos campos según el contexto y la
-     * configuración de la tienda:
-     *   - En 'update_order_review' WooCommerce envía el formulario serializado en
-     *     $_POST['post_data']; en el submit final (?wc-ajax=checkout) NO lo manda,
-     *     los campos llegan sueltos. Por eso el costo se calculaba bien al mostrar
-     *     el checkout, pero al confirmar el pedido la comuna no se resolvía y
-     *     WooCommerce rechazaba la compra con "método de envío no seleccionado".
-     *   - Según "Enviar a una dirección diferente", la comuna real puede venir en
-     *     shipping_city o en billing_city.
-     * Por eso no basta con un solo campo: se prueba el destino del paquete y, si
-     * falla, ambos campos por prioridad, tomando el primero con valor.
+     * Desde la 1.1.2 HUPKEC_Shipping::prepare_packages() la deja en el destino
+     * del paquete ANTES de que WooCommerce lo hashee: así cambiar de comuna
+     * cambia el hash e invalida las tarifas guardadas en la sesión. Leer la
+     * comuna solo del formulario hacía que WooCommerce reutilizara el resultado
+     * anterior. La lectura del formulario queda como respaldo, por si otro
+     * plugin reemplaza los paquetes.
      */
     private function get_customer_city( $package ) {
-
-        // 1. Desde el package destination (lo más fiable: es lo que WC hashea y
-        //    valida contra la tarifa elegida).
         if ( ! empty( $package['destination']['city'] ) ) {
             return sanitize_text_field( $package['destination']['city'] );
         }
-
-        // Estos datos llegan durante el cálculo de envío de WooCommerce, que
-        // gestiona su propio flujo y nonce. Solo leemos la comuna y la sanitizamos.
-        // phpcs:disable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-
-        // 2. post_data serializado (update_order_review).
-        $post_data_str = isset( $_POST['post_data'] ) ? wp_unslash( $_POST['post_data'] ) : '';
-        if ( $post_data_str ) {
-            $post_data = [];
-            wp_parse_str( $post_data_str, $post_data );
-            $city = $this->pick_city( $post_data );
-            if ( $city !== '' ) return $city;
-        }
-
-        // 3. Campos sueltos del POST (submit final).
-        $city = $this->pick_city( wp_unslash( $_POST ) );
-        if ( $city !== '' ) return $city;
-        // phpcs:enable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-
-        // 4. Desde WC()->customer como último recurso.
-        if ( WC()->customer ) {
-            $city = WC()->customer->get_shipping_city() ?: WC()->customer->get_billing_city();
-            if ( $city ) return sanitize_text_field( $city );
-        }
-
-        return '';
-    }
-
-    /**
-     * Elige la comuna de un conjunto de campos (shipping_city / billing_city).
-     *
-     * Prioriza shipping_city si el cliente eligió enviar a otra dirección, pero
-     * SIEMPRE cae al otro campo si el preferido viene vacío: en el submit final el
-     * campo que trae el valor depende del tema y del estado del checkbox. El valor
-     * "0" (o "false"/"no") del checkbox se trata como desactivado.
-     *
-     * @param array $data Campos ya des-slasheados.
-     * @return string Comuna saneada, o '' si no hay.
-     */
-    private function pick_city( $data ) {
-        if ( ! is_array( $data ) ) return '';
-
-        $flag      = $data['ship_to_different_address'] ?? '';
-        $ship_diff = ! empty( $flag ) && ! in_array( (string) $flag, [ '0', 'false', 'no' ], true );
-
-        $order = $ship_diff ? [ 'shipping_city', 'billing_city' ] : [ 'billing_city', 'shipping_city' ];
-        foreach ( $order as $field ) {
-            if ( ! empty( $data[ $field ] ) ) {
-                return sanitize_text_field( $data[ $field ] );
-            }
-        }
-        return '';
+        return HUPKEC_Shipping::resolve_city_from_request();
     }
 
     private function get_zone_cost( $zone, $package ) {
