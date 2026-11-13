@@ -105,24 +105,41 @@ Registra una pestaña en el panel. La `callback` imprime el contenido del panel.
 add_filter( 'hupkec_admin_tabs', function ( array $tabs ) : array {
     $tabs['licencia'] = [
         'label'    => 'Licencia',
-        'icon'     => '🔑',              // emoji del menú lateral
+        'icon'     => 'dashicons-lock',   // clase de Dashicons (desde 1.2.0)
+        'desc'     => 'Activa tu licencia para recibir actualizaciones.', // opcional: subtítulo
         'module'   => '',                 // módulo que la habilita; '' = siempre visible
         'callback' => 'miaddon_tab_licencia', // imprime el HTML del panel
-        'order'    => 90,                 // menor = más arriba; las propias van 10-40
+        'order'    => 60,                 // menor = más arriba; propias 10-40 y Guía 90
     ];
     return $tabs;
 } );
 ```
 
+Desde la 1.2.0 el panel usa el sistema de diseño HUP (`hup-ui/`): el contenido de
+la pestaña debe usar sus clases `.hup-*` (`.hup-card`, `.hup-field`, `.hup-btn`…).
+El catálogo con el HTML de cada componente está en `hup-ui/componentes.html`.
+
+- **Ícono:** solo Dashicons. Los emojis que registraban las pestañas antes de la
+  1.2.0 se traducen a un Dashicon equivalente para no romper addons existentes.
+- **`desc`:** si la pestaña lo trae, el panel imprime la cabecera de sección
+  (título + frase). Sin `desc`, la pestaña imprime su propia cabecera.
+- **URL:** cada pestaña se abre con `admin.php?page=hupkec-settings&tab={clave}`.
+
+Ganchos de compatibilidad que se conservan en el marcado (no dan estilo):
+`.hupkec-tab-btn[data-tab]` en el menú, `.hupkec-panel#tab-{clave}` (`.is-active`
+el visible), `.hupkec-hidden` para ocultar un botón, y en Inicio
+`.hupkec-module-row` › `.hupkec-module-label` + `.hupkec-module-checkbox[data-module]`.
+Los avisos se muestran con `HUP.toast( mensaje )` o `HUP.toast( mensaje, 'error' )`.
+
 ### `hupkec_after_tab_{clave}` — acción
 
 Añade secciones **dentro** de una pestaña existente, sin reemplazar su contenido.
-`{clave}` es la clave de la pestaña: `inicio`, `comunas`, `zonas`, `campos`.
+`{clave}` es la clave de la pestaña: `inicio`, `comunas`, `zonas`, `campos`, `guia`.
 
 ```php
-// Añade un bloque al final de la pestaña de Zonas de despacho.
+// Añade un bloque al final de la pestaña Despacho.
 add_action( 'hupkec_after_tab_zonas', function () {
-    echo '<div class="hupkec-card"><h3>Opciones avanzadas de envío</h3>…</div>';
+    echo '<div class="hup-card"><div class="hup-card__body">…</div></div>';
 } );
 ```
 

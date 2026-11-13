@@ -3,6 +3,15 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 class HUPKEC_Admin {
 
+    /** Versión de hup-ui/ copiada en el plugin (ver hup-ui/CHANGELOG.md). */
+    const UI_VERSION = '1.3.0';
+
+    /** Color propio del plugin: SOLO el ícono del header (regla de hup-ui). Azul bandera de Chile. */
+    const COLOR = '#0039a6';
+
+    /** Slug de la página. */
+    const PAGE = 'hupkec-settings';
+
     public function __construct() {
         // Prioridad 99: WooCommerce registra sus propios submenús hasta la 70
         // (Extensiones). Registrando después, el nuestro queda al final del listado.
@@ -67,13 +76,25 @@ class HUPKEC_Admin {
 
     public function enqueue_assets( $hook ) {
         if ( $hook !== 'woocommerce_page_hupkec-settings' ) return;
-        
-        // CSS y JS del admin (sin jQuery UI).
+
+        // Sistema de diseño HUP (hup-ui/): el mismo en todos los plugins HUP.
+        // Handles con el slug del plugin para que dos plugins HUP activos, con
+        // versiones distintas de hup-ui, no se pisen.
+        $slug   = 'hup-kit-ecommerce-chile';
+        $tokens = 'hup-ui-tokens-' . $slug;
+        $ui     = 'hup-ui-' . $slug;
+        wp_enqueue_style( 'dashicons' );
+        wp_enqueue_style( $tokens, HUPKEC_URL . 'hup-ui/tokens.css', [], self::UI_VERSION );
+        wp_enqueue_style( $ui, HUPKEC_URL . 'hup-ui/hup-admin.css', [ $tokens ], self::UI_VERSION );
+        wp_enqueue_script( $ui, HUPKEC_URL . 'hup-ui/hup-admin.js', [], self::UI_VERSION, true );
+
+        // Lo propio del plugin: solo los ganchos de compatibilidad y el arrastre
+        // de campos; el aspecto lo da hup-ui.
         // 'wp-hooks' es la librería de hooks de WordPress: da al panel el mismo
         // sistema de acciones y filtros que PHP, para que un addon pueda inyectar
         // controles dentro del modal de campos y del editor de zonas.
-        wp_enqueue_style(  'hupkec-admin-style', HUPKEC_URL . 'assets/css/hupkec-admin.css',  [], HUPKEC_VERSION );
-        wp_enqueue_script( 'hupkec-admin-js',    HUPKEC_URL . 'assets/js/hupkec-admin.js', [ 'jquery', 'wp-hooks' ], HUPKEC_VERSION, true );
+        wp_enqueue_style(  'hupkec-admin-style', HUPKEC_URL . 'assets/css/hupkec-admin.css', [ $ui ], HUPKEC_VERSION );
+        wp_enqueue_script( 'hupkec-admin-js',    HUPKEC_URL . 'assets/js/hupkec-admin.js', [ 'jquery', 'wp-hooks', $ui ], HUPKEC_VERSION, true );
 
         $data = [
             'ajaxUrl'         => admin_url( 'admin-ajax.php' ),
@@ -89,6 +110,7 @@ class HUPKEC_Admin {
             'settings'        => HUPKEC_Settings::get_settings(),
             'billingModule'   => hupkec_billing_module_active() ? 1 : 0,
             'version'         => HUPKEC_VERSION,
+            'pageUrl'         => admin_url( 'admin.php?page=' . self::PAGE ),
         ];
 
         /**
@@ -251,39 +273,50 @@ class HUPKEC_Admin {
      *
      *     'clave' => [
      *         'label'    => 'Nombre visible',
-     *         'icon'     => '📦',       // emoji del menú lateral
-     *         'module'   => 'shipping', // módulo que la habilita; vacío = siempre visible
-     *         'callback' => callable,   // pinta el contenido del panel
-     *         'order'    => 50,         // menor = más arriba
+     *         'icon'     => 'dashicons-car', // clase de Dashicons (los emojis se traducen a uno)
+     *         'desc'     => 'Una frase',     // opcional: subtítulo de la sección
+     *         'module'   => 'shipping',      // módulo que la habilita; vacío = siempre visible
+     *         'callback' => callable,        // pinta el contenido del panel
+     *         'order'    => 50,              // menor = más arriba
      *     ]
      *
      * @since 1.1.0
+     * @since 1.2.0 'icon' acepta una clase de Dashicons y se añade 'desc'.
      * @return array
      */
     private function get_tabs() {
         $base = [
             'inicio' => [
-                'label' => 'Inicio', 'icon' => '🏠', 'module' => '',
+                'label' => 'Inicio', 'icon' => 'dashicons-dashboard', 'module' => '',
+                'desc'  => 'Enciende los módulos que necesitas y revisa el estado de tu tienda.',
                 'callback' => [ $this, 'tab_inicio' ], 'order' => 10, 'core' => true,
             ],
             'comunas' => [
-                'label' => 'Comunas', 'icon' => '📍', 'module' => 'comunas',
+                'label' => 'Comunas', 'icon' => 'dashicons-location', 'module' => 'comunas',
+                'desc'  => 'Elige las regiones y comunas donde despachas.',
                 'callback' => [ $this, 'tab_comunas' ], 'order' => 20, 'core' => true,
             ],
             'zonas' => [
-                'label' => 'Zonas de despacho', 'icon' => '🚚', 'module' => 'shipping',
+                'label' => 'Despacho', 'icon' => 'dashicons-car', 'module' => 'shipping',
+                'desc'  => 'Agrupa comunas en zonas y define cuánto cobras por despachar a cada una.',
                 'callback' => [ $this, 'tab_zonas' ], 'order' => 30, 'core' => true,
             ],
             'campos' => [
-                'label' => 'Campos del checkout', 'icon' => '📝', 'module' => 'checkout',
+                'label' => 'Campos', 'icon' => 'dashicons-forms', 'module' => 'checkout',
+                'desc'  => 'Ordena y personaliza el formulario de pago.',
                 'callback' => [ $this, 'tab_campos' ], 'order' => 40, 'core' => true,
+            ],
+            'guia' => [
+                'label' => 'Guía', 'icon' => 'dashicons-book', 'module' => '',
+                'desc'  => 'Cómo configurar el plugin y resolver los problemas más comunes.',
+                'callback' => [ $this, 'tab_guia' ], 'order' => 90, 'core' => true,
             ],
         ];
 
         /**
          * Pestañas del panel de administración.
          *
-         * Para añadir una, usa un 'order' mayor que 40 y da una 'callback' que
+         * Para añadir una, usa un 'order' entre 41 y 89 y da una 'callback' que
          * imprima el contenido. Las pestañas propias del plugin no se pueden
          * eliminar ni reasignar su callback; sí cambiar etiqueta, icono y orden.
          *
@@ -321,7 +354,8 @@ class HUPKEC_Admin {
 
             $clean[ $key ] = [
                 'label'    => isset( $tab['label'] ) ? sanitize_text_field( (string) $tab['label'] ) : $key,
-                'icon'     => isset( $tab['icon'] ) ? sanitize_text_field( (string) $tab['icon'] ) : '',
+                'icon'     => $this->tab_icon( $tab['icon'] ?? '' ),
+                'desc'     => isset( $tab['desc'] ) ? sanitize_text_field( (string) $tab['desc'] ) : '',
                 'module'   => ! empty( $tab['module'] ) ? sanitize_key( (string) $tab['module'] ) : '',
                 'callback' => $tab['callback'],
                 'order'    => isset( $tab['order'] ) ? (int) $tab['order'] : 50,
@@ -348,6 +382,37 @@ class HUPKEC_Admin {
     }
 
     /**
+     * Clase de Dashicons para el ícono de una pestaña.
+     *
+     * Hasta la 1.1.x el menú usaba emojis; el sistema de diseño HUP exige
+     * Dashicons. Los emojis que ya registran los addons se traducen a su
+     * equivalente para que no queden pestañas sin ícono.
+     *
+     * @since 1.2.0
+     * @param mixed $icon Lo que trae la pestaña.
+     * @return string Clase 'dashicons-…'.
+     */
+    private function tab_icon( $icon ) {
+        $icon = is_string( $icon ) ? trim( $icon ) : '';
+        if ( preg_match( '/^dashicons-[a-z0-9-]+$/', $icon ) ) return $icon;
+
+        $map = [
+            '🏠' => 'dashicons-dashboard',
+            '📍' => 'dashicons-location',
+            '🚚' => 'dashicons-car',
+            '📝' => 'dashicons-forms',
+            '🔑' => 'dashicons-lock',
+            '🧩' => 'dashicons-feedback',
+            '🏷'  => 'dashicons-tag',
+            '➗' => 'dashicons-calculator',
+            '📦' => 'dashicons-location-alt',
+        ];
+        // Quitar el selector de variación (U+FE0F) que traen algunos emojis.
+        $icon = str_replace( "\u{FE0F}", '', $icon );
+        return $map[ $icon ] ?? 'dashicons-admin-generic';
+    }
+
+    /**
      * ¿Debe verse el botón de esta pestaña?
      *
      * Una pestaña atada a un módulo apagado se oculta, pero su panel se imprime
@@ -360,73 +425,112 @@ class HUPKEC_Admin {
         return empty( $tab['module'] ) || HUPKEC_Modules::is_active( $tab['module'] );
     }
 
+    /**
+     * Pestaña abierta: la de ?tab= si existe y está visible; si no, Inicio.
+     *
+     * @param array $tabs
+     * @return string
+     */
+    private function current_tab( $tabs ) {
+        // Solo decide qué pestaña se muestra; no procesa ningún dato.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
+        if ( $tab && isset( $tabs[ $tab ] ) && $this->tab_is_visible( $tabs[ $tab ] ) ) {
+            return $tab;
+        }
+        return 'inicio';
+    }
+
+    /**
+     * URL de una pestaña del panel.
+     *
+     * @param string $tab
+     * @return string
+     */
+    private function tab_url( $tab ) {
+        return add_query_arg( [ 'page' => self::PAGE, 'tab' => $tab ], admin_url( 'admin.php' ) );
+    }
+
+    /** Tooltip (i) junto a un label. */
+    private function tip( $text ) {
+        printf(
+            '<span class="hup-tip" tabindex="0" data-tip="%s"><span class="dashicons dashicons-info-outline" aria-hidden="true"></span></span>',
+            esc_attr( $text )
+        );
+    }
+
     public function render_page() {
-        $tabs = $this->get_tabs();
+        if ( ! current_user_can( 'manage_woocommerce' ) ) return;
+
+        $tabs    = $this->get_tabs();
+        $current = $this->current_tab( $tabs );
         ?>
-        <div class="hupkec-wrap">
-            <!-- Header HUP Style -->
-            <div class="hupkec-header">
-                <div class="hupkec-header__logo">
-                    <div class="hupkec-header__icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M3 3H5L5.4 5M5.4 5H21L19 12H8.5M5.4 5L8.5 12M8.5 12L6.5 17H19M8.5 12H17.5M11 20.5C11 21.3284 10.3284 22 9.5 22C8.67157 22 8 21.3284 8 20.5C8 19.6716 8.67157 19 9.5 19C10.3284 19 11 19.6716 11 20.5ZM19 20.5C19 21.3284 18.3284 22 17.5 22C16.6716 22 16 21.3284 16 20.5C16 19.6716 16.6716 19 17.5 19C18.3284 19 19 19.6716 19 20.5Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <circle cx="18" cy="6" r="4" fill="#FFD700"/>
-                            <path d="M18 4L18.5 5.5H20L18.75 6.5L19.25 8L18 7L16.75 8L17.25 6.5L16 5.5H17.5L18 4Z" fill="#D52B1E"/>
-                        </svg>
+        <div class="wrap hupkec-wrap">
+            <h1 class="screen-reader-text">HUP - Kit Ecommerce Chile</h1>
+
+            <div class="hup-app" style="--hup-plugin:<?php echo esc_attr( self::COLOR ); ?>">
+                <header class="hup-header">
+                    <div class="hup-header__icon"><span class="dashicons dashicons-cart" aria-hidden="true"></span></div>
+                    <div class="hup-header__text">
+                        <h2 class="hup-header__title">HUP - Kit Ecommerce Chile <span class="hup-badge hup-badge--version">v<?php echo esc_html( HUPKEC_VERSION ); ?></span></h2>
+                        <p class="hup-header__desc">Regiones, comunas, despacho por comuna, RUT y facturación para tu tienda WooCommerce en Chile.</p>
                     </div>
-                    <div>
-                        <h1 class="hupkec-header__title">HUP - Kit Ecommerce Chile <span class="hupkec-header__version">v<?php echo esc_html( HUPKEC_VERSION ); ?></span></h1>
-                        <p class="hupkec-header__desc">Reúne en un solo plugin lo esencial para vender en Chile: selector dinámico de regiones y comunas, zonas de despacho con costo real, editor de campos del checkout con validación de RUT y datos de facturación para empresas. ¿Necesitas más? La <a href="<?php echo esc_url( $this->pro_url() ); ?>" target="_blank" rel="noopener">versión Pro</a> suma números de seguimiento, etiquetas PDF para tus paquetes y opciones avanzadas de envío y campos. ¿Dudas o sugerencias? Escríbenos a <a href="<?php echo esc_url( 'mailto:contacto@hazmeunapagina.cl' ); ?>">contacto@hazmeunapagina.cl</a> — Desarrollado por <a href="<?php echo esc_url( 'https://www.hazmeunapagina.cl' ); ?>" target="_blank" rel="noopener">HazmeUnaPagina.cl</a></p>
-                    </div>
-                </div>
-            </div>
+                    <div class="hup-header__support"><span class="dashicons dashicons-email-alt" aria-hidden="true"></span>¿Dudas o soporte? <a href="<?php echo esc_url( 'mailto:contacto@hazmeunapagina.cl' ); ?>">contacto@hazmeunapagina.cl</a></div>
+                </header>
 
-            <?php
-            /**
-             * Justo debajo de la cabecera del panel, antes del layout.
-             *
-             * Es donde un addon pondría un aviso propio.
-             *
-             * @since 1.1.0
-             */
-            do_action( 'hupkec_admin_header_after' );
-            ?>
+                <?php
+                /**
+                 * Justo debajo de la cabecera del panel, antes del layout.
+                 *
+                 * Es donde un addon pondría un aviso propio.
+                 *
+                 * @since 1.1.0
+                 */
+                do_action( 'hupkec_admin_header_after' );
+                ?>
 
-            <!-- Layout Grid: Sidebar + Content -->
-            <div class="hupkec-layout">
-                <!-- Sidebar -->
-                <div class="hupkec-sidebar">
-                    <?php $primera = true; foreach ( $tabs as $key => $tab ) : ?>
-                        <button class="hupkec-tab-btn<?php echo $primera ? ' is-active' : ''; ?><?php echo $this->tab_is_visible( $tab ) ? '' : ' hupkec-hidden'; ?>" data-tab="<?php echo esc_attr( $key ); ?>">
-                            <span class="hupkec-tab-btn__icon"><?php echo esc_html( $tab['icon'] ); ?></span>
-                            <span><?php echo esc_html( $tab['label'] ); ?></span>
-                        </button>
-                    <?php $primera = false; endforeach; ?>
-                    <div class="hupkec-sidebar-footer">
-                        Hecho con ❤️ por HUP
-                    </div>
-                </div>
+                <div class="hup-layout">
+                    <nav class="hup-nav" aria-label="Secciones">
+                        <ul class="hup-nav__list">
+                            <?php foreach ( $tabs as $key => $tab ) :
+                                $classes = 'hup-nav__item hupkec-tab-btn';
+                                if ( $key === $current ) $classes .= ' is-active';
+                                if ( ! $this->tab_is_visible( $tab ) ) $classes .= ' hupkec-hidden';
+                                ?>
+                                <li><a class="<?php echo esc_attr( $classes ); ?>" data-tab="<?php echo esc_attr( $key ); ?>" href="<?php echo esc_url( $this->tab_url( $key ) ); ?>"<?php echo $key === $current ? ' aria-current="page"' : ''; ?>>
+                                    <span class="dashicons <?php echo esc_attr( $tab['icon'] ); ?>" aria-hidden="true"></span><?php echo esc_html( $tab['label'] ); ?>
+                                </a></li>
+                            <?php endforeach; ?>
+                        </ul>
+                        <div class="hup-nav__footer">Hecho por <a href="<?php echo esc_url( 'https://www.hazmeunapagina.cl' ); ?>" target="_blank" rel="noopener">HUP</a></div>
+                    </nav>
 
-                <!-- Content -->
-                <div class="hupkec-content">
-                    <?php $primera = true; foreach ( $tabs as $key => $tab ) : ?>
-                        <div class="hupkec-panel<?php echo $primera ? ' is-active' : ''; ?>" id="tab-<?php echo esc_attr( $key ); ?>">
-                            <?php
-                            call_user_func( $tab['callback'] );
+                    <main class="hup-main">
+                        <?php foreach ( $tabs as $key => $tab ) : ?>
+                            <section class="hupkec-panel<?php echo $key === $current ? ' is-active' : ''; ?>" id="tab-<?php echo esc_attr( $key ); ?>">
+                                <?php if ( ! empty( $tab['desc'] ) ) : ?>
+                                    <div class="hup-page-head">
+                                        <h2><?php echo esc_html( $tab['label'] ); ?></h2>
+                                        <p><?php echo esc_html( $tab['desc'] ); ?></p>
+                                    </div>
+                                <?php endif; ?>
+                                <?php
+                                call_user_func( $tab['callback'] );
 
-                            /**
-                             * Al final del panel de una pestaña concreta.
-                             *
-                             * Permite añadir secciones dentro de una pestaña existente
-                             * sin sustituir su contenido. Por ejemplo:
-                             * hupkec_after_tab_zonas, hupkec_after_tab_campos.
-                             *
-                             * @since 1.1.0
-                             */
-                            do_action( "hupkec_after_tab_{$key}" );
-                            ?>
-                        </div>
-                    <?php $primera = false; endforeach; ?>
+                                /**
+                                 * Al final del panel de una pestaña concreta.
+                                 *
+                                 * Permite añadir secciones dentro de una pestaña existente
+                                 * sin sustituir su contenido. Por ejemplo:
+                                 * hupkec_after_tab_zonas, hupkec_after_tab_campos.
+                                 *
+                                 * @since 1.1.0
+                                 */
+                                do_action( "hupkec_after_tab_{$key}" );
+                                ?>
+                            </section>
+                        <?php endforeach; ?>
+                    </main>
                 </div>
             </div>
         </div>
@@ -435,32 +539,43 @@ class HUPKEC_Admin {
 
     /* ── INICIO ─────────────────────────────────────────── */
     private function tab_inicio() {
+        $registry = HUPKEC_Modules::registry();
+        $teasers  = array_diff_key( $this->pro_modules(), $registry );
         ?>
-        <div class="hupkec-info-box">El selector de regiones y comunas está activo en el checkout. Activa los módulos adicionales según lo que necesites.</div>
-        <div class="hupkec-card">
-            <h3>Módulos opcionales</h3>
-            <div class="hupkec-modules-list">
-                <?php
-                // Los interruptores salen del registro de módulos, así que un addon
-                // que registre el suyo aparece aquí sin tocar esta plantilla.
-                $registry = HUPKEC_Modules::registry();
-                foreach ( $registry as $key => $mod ) {
-                    if ( empty( $mod['toggle'] ) ) continue;
-                    $this->toggle( $key, $mod, HUPKEC_Modules::is_active( $key ) );
-                }
+        <div class="hup-grid hup-grid--aside">
+            <div class="hup-card">
+                <div class="hup-card__head">
+                    <div>
+                        <h3 class="hup-card__title">Módulos</h3>
+                        <p class="hup-card__desc">El selector de regiones y comunas está siempre activo. Enciende solo lo que uses.</p>
+                    </div>
+                </div>
+                <div class="hup-card__body">
+                    <div class="hup-rows">
+                        <?php
+                        // Los interruptores salen del registro de módulos, así que un addon
+                        // que registre el suyo aparece aquí sin tocar esta plantilla.
+                        foreach ( $registry as $key => $mod ) {
+                            if ( empty( $mod['toggle'] ) ) continue;
+                            $this->toggle( $key, $mod, HUPKEC_Modules::is_active( $key ) );
+                        }
 
-                // Teasers de módulos de la versión Pro. Se muestran SOLO si el Pro
-                // no está instalado: cuando lo está, registra estos mismos módulos
-                // (por su clave) en el registro de arriba con su interruptor real,
-                // y aquí se omiten para no duplicarlos.
-                foreach ( $this->pro_modules() as $key => $mod ) {
-                    if ( isset( $registry[ $key ] ) ) continue;
-                    $this->pro_teaser( $mod );
-                }
-                ?>
+                        // Teasers de módulos de la versión Pro. Se muestran SOLO si el Pro
+                        // no está instalado: cuando lo está, registra estos mismos módulos
+                        // (por su clave) en el registro de arriba con su interruptor real,
+                        // y aquí se omiten para no duplicarlos.
+                        foreach ( $teasers as $mod ) {
+                            $this->pro_teaser( $mod );
+                        }
+                        ?>
+                    </div>
+                    <?php if ( $teasers ) : ?>
+                        <p class="hup-hint">Los módulos marcados <span class="hup-badge hup-badge--pro">PRO</span> vienen en la <a href="<?php echo esc_url( $this->pro_url() ); ?>" target="_blank" rel="noopener">versión Pro</a>, junto con opciones avanzadas de envío y campos.</p>
+                    <?php endif; ?>
+                </div>
             </div>
+            <?php $this->status_card(); ?>
         </div>
-        <?php $this->status_card(); ?>
         <?php
     }
 
@@ -508,15 +623,12 @@ class HUPKEC_Admin {
      */
     private function pro_teaser( $mod ) {
         ?>
-        <div class="hupkec-module-row hupkec-module-row--pro">
-            <div class="hupkec-module-info">
-                <div class="hupkec-module-label">
-                    <?php echo esc_html( $mod['label'] ); ?>
-                    <span class="hupkec-pro-tag">PRO</span>
-                </div>
-                <div class="hupkec-module-desc"><?php echo esc_html( $mod['desc'] ); ?></div>
+        <div class="hup-row hupkec-module-row hupkec-module-row--pro">
+            <div class="hup-row__text">
+                <div class="hup-row__title hupkec-module-label"><?php echo esc_html( $mod['label'] ); ?> <span class="hup-badge hup-badge--pro">PRO</span></div>
+                <div class="hup-row__desc"><?php echo esc_html( $mod['desc'] ); ?></div>
             </div>
-            <a class="hupkec-pro-cta" href="<?php echo esc_url( $this->pro_url() ); ?>" target="_blank" rel="noopener">Consigue la versión Pro</a>
+            <a class="hup-btn hup-btn--secondary hup-btn--sm" href="<?php echo esc_url( $this->pro_url() ); ?>" target="_blank" rel="noopener">Ver versión Pro</a>
         </div>
         <?php
     }
@@ -524,49 +636,94 @@ class HUPKEC_Admin {
     /**
      * Un interruptor de módulo.
      *
+     * Las clases hupkec-module-row / -label / -checkbox no dan estilo: son los
+     * ganchos que usa el addon Pro para marcar sus módulos. No quitarlas.
+     *
      * @param string $key    Clave del módulo.
      * @param array  $mod    Entrada del registro.
      * @param bool   $active Estado actual.
      */
     private function toggle( $key, $mod, $active ) {
+        $id = 'hupkec-mod-' . $key;
         ?>
-        <div class="hupkec-module-row">
-            <div class="hupkec-module-info">
-                <div class="hupkec-module-label"><?php echo esc_html( $mod['label'] ); ?></div>
-                <div class="hupkec-module-desc"><?php echo esc_html( $mod['desc'] ); ?></div>
+        <div class="hup-row hupkec-module-row">
+            <div class="hup-row__text">
+                <div class="hup-row__title hupkec-module-label" id="<?php echo esc_attr( $id ); ?>-label"><?php echo esc_html( $mod['label'] ); ?></div>
+                <div class="hup-row__desc"><?php echo esc_html( $mod['desc'] ); ?></div>
             </div>
-            <label class="hupkec-toggle" for="hupkec-mod-<?php echo esc_attr($key); ?>">
-                <input type="checkbox" id="hupkec-mod-<?php echo esc_attr($key); ?>"
-                       class="hupkec-module-checkbox" data-module="<?php echo esc_attr($key); ?>"
-                       data-tab="<?php echo esc_attr( $mod['tab'] ); ?>" <?php checked($active); ?>>
-                <span class="hupkec-toggle-track"></span><span class="hupkec-toggle-thumb"></span>
+            <label class="hup-toggle" for="<?php echo esc_attr( $id ); ?>">
+                <input type="checkbox" id="<?php echo esc_attr( $id ); ?>"
+                       class="hupkec-module-checkbox" data-module="<?php echo esc_attr( $key ); ?>"
+                       data-tab="<?php echo esc_attr( $mod['tab'] ); ?>"
+                       aria-labelledby="<?php echo esc_attr( $id ); ?>-label" <?php checked( $active ); ?>>
+                <span class="hup-toggle__track"></span>
             </label>
         </div>
         <?php
     }
 
+    /**
+     * Resumen del estado de la tienda.
+     *
+     * Cuenta lo que de verdad ve el cliente (HUPKEC_Settings::get_comunas(),
+     * con el filtro de comunas y los sectores aplicados), no lo guardado en
+     * bruto: con el filtro apagado se ofrecen las 346 aunque haya una selección.
+     */
     private function status_card() {
-        $settings = HUPKEC_Settings::get_settings();
         $regions  = hupkec_get_regions_base();
-        $comunas  = hupkec_get_comunas_base();
-        $total_c  = array_sum( array_map('count', $comunas) );
-        $active_r = $settings['enabled_regions'] ?? array_keys($regions);
-        $active_c = 0;
-        foreach ($active_r as $rc) $active_c += count($settings['enabled_comunas'][$rc] ?? ($comunas[$rc] ?? []));
+        $offered  = HUPKEC_Settings::get_comunas();
+        $active_r = count( array_filter( $offered ) );
+        $active_c = array_sum( array_map( 'count', $offered ) );
+        $shipping = hupkec_module_active( 'shipping' );
         $zones    = HUPKEC_Shipping::get_zones();
-        $in_zone  = ! empty($zones) ? array_merge(...array_column(array_values($zones),'comunas')) : [];
-        $all_act  = [];
-        foreach ($active_r as $rc) $all_act = array_merge($all_act, $settings['enabled_comunas'][$rc] ?? ($comunas[$rc] ?? []));
-        $sin_zona = count(array_diff($all_act, $in_zone));
+
+        $sin_zona = 0;
+        if ( $shipping ) {
+            foreach ( $offered as $list ) {
+                foreach ( $list as $comuna ) {
+                    if ( ! HUPKEC_Shipping::get_zone_for_city( $comuna ) ) $sin_zona++;
+                }
+            }
+        }
         ?>
-        <div class="hupkec-card">
-            <h3>Estado actual</h3>
-            <table class="hupkec-status-table">
-                <tr><td>Regiones activas</td><td><?php echo count($active_r).' de '.count($regions); ?></td></tr>
-                <tr><td>Comunas activas</td><td><?php echo esc_html( "$active_c de $total_c" ); ?></td></tr>
-                <tr><td>Zonas de despacho</td><td><?php echo count($zones).' zona'.(count($zones)!==1?'s':'').' creada'.(count($zones)!==1?'s':''); ?></td></tr>
-                <?php if ($sin_zona > 0): ?><tr class="hupkec-warn-row"><td>Comunas sin zona asignada</td><td><?php echo esc_html( $sin_zona ); ?> comunas</td></tr><?php endif; ?>
-            </table>
+        <div class="hup-card">
+            <div class="hup-card__head">
+                <div>
+                    <h3 class="hup-card__title">Estado de la tienda</h3>
+                    <p class="hup-card__desc">Lo que ve el cliente en el checkout.</p>
+                </div>
+            </div>
+            <div class="hup-card__body">
+                <dl class="hup-kv">
+                    <dt>Regiones</dt>
+                    <dd><?php echo esc_html( sprintf( '%d de %d', $active_r, count( $regions ) ) ); ?></dd>
+                    <dt>Comunas</dt>
+                    <dd><?php echo esc_html( number_format_i18n( $active_c ) ); ?></dd>
+                    <?php if ( $shipping ) : ?>
+                        <dt>Zonas de despacho</dt>
+                        <dd><?php echo esc_html( number_format_i18n( count( $zones ) ) ); ?></dd>
+                        <dt>Comunas sin zona</dt>
+                        <dd>
+                            <?php if ( $sin_zona > 0 ) : ?>
+                                <span class="hup-badge hup-badge--warning hup-badge--dot"><?php echo esc_html( number_format_i18n( $sin_zona ) ); ?></span>
+                            <?php else : ?>
+                                <span class="hup-badge hup-badge--success hup-badge--dot">Ninguna</span>
+                            <?php endif; ?>
+                        </dd>
+                        <dt>Zona en WooCommerce</dt>
+                        <dd>
+                            <?php if ( HUPKEC_Shipping::zone_exists() ) : ?>
+                                <span class="hup-badge hup-badge--success hup-badge--dot">Activa</span>
+                            <?php else : ?>
+                                <span class="hup-badge hup-badge--danger hup-badge--dot">Falta</span>
+                            <?php endif; ?>
+                        </dd>
+                    <?php endif; ?>
+                </dl>
+                <?php if ( $shipping && $sin_zona > 0 ) : ?>
+                    <p class="hup-hint">Las comunas sin zona no muestran envío en el checkout. <a href="<?php echo esc_url( $this->tab_url( 'zonas' ) ); ?>" class="hupkec-goto" data-tab="zonas">Asígnalas en Despacho</a>.</p>
+                <?php endif; ?>
+            </div>
         </div>
         <?php
     }
@@ -576,170 +733,228 @@ class HUPKEC_Admin {
         $regions  = hupkec_get_regions_base();
         $comunas  = hupkec_get_comunas_base();
         $settings = HUPKEC_Settings::get_settings();
-        $enabled_r= $settings['enabled_regions'] ?? array_keys($regions);
+        $enabled_r= $settings['enabled_regions'] ?? array_keys( $regions );
         ?>
-        <p class="hupkec-tab-desc">Activa las regiones y comunas donde despachas. Las comunas desactivadas no aparecerán en el checkout.</p>
-        <div class="hupkec-search-bar">
-            <input type="text" id="hupkec-comunas-search" class="hupkec-search-input" placeholder="Buscar comuna... (filtra en todas las regiones)">
-            <div class="hupkec-search-actions">
-                <button type="button" class="hupkec-btn" id="hupkec-select-all-filtered">Seleccionar todas</button>
-                <button type="button" class="hupkec-btn" id="hupkec-deselect-all-filtered">Deseleccionar todas</button>
-                <button type="button" class="hupkec-btn hupkec-btn-invert" id="hupkec-invert-all">↔ Invertir selección global</button>
-                <button type="button" class="hupkec-btn hupkec-btn-view-selected" id="hupkec-view-selected-btn">👁 Ver seleccionadas</button>
+        <form id="hupkec-comunas-form" class="hup-card" novalidate>
+            <div class="hup-card__head">
+                <div>
+                    <h3 class="hup-card__title">Regiones y comunas</h3>
+                    <p class="hup-card__desc">Lo que desmarques no aparecerá en el selector de comunas del checkout.</p>
+                </div>
             </div>
-        </div>
-        <form id="hupkec-comunas-form" data-ajax="1">
-            <div class="hupkec-regions-grid">
-                <?php foreach ($regions as $code => $name):
-                    $is_active       = in_array($code, $enabled_r, true);
-                    $enabled_comunas = $settings['enabled_comunas'][$code] ?? $comunas[$code];
-                    $custom_sectors  = $settings['custom_sectors'][$code] ?? [];
+            <div class="hup-card__body">
+                <div class="hup-toolbar">
+                    <div class="hup-search">
+                        <span class="dashicons dashicons-search" aria-hidden="true"></span>
+                        <input type="search" id="hupkec-comunas-search" class="hup-input" placeholder="Buscar comuna en todas las regiones…" aria-label="Buscar comuna">
+                    </div>
+                    <div class="hup-btn-group" role="group" aria-label="Acciones sobre las comunas visibles">
+                        <button type="button" id="hupkec-select-all-filtered">Marcar visibles</button>
+                        <button type="button" id="hupkec-deselect-all-filtered">Desmarcar visibles</button>
+                        <button type="button" id="hupkec-invert-all">Invertir</button>
+                        <button type="button" id="hupkec-view-selected-btn" aria-pressed="false">Ver marcadas</button>
+                    </div>
+                </div>
+
+                <div class="hup-stack">
+                <?php foreach ( $regions as $code => $name ) :
+                    $is_active       = in_array( $code, $enabled_r, true );
+                    $enabled_comunas = $settings['enabled_comunas'][ $code ] ?? $comunas[ $code ];
+                    $custom_sectors  = $settings['custom_sectors'][ $code ] ?? [];
                     // Región activa sin comunas ni sectores → no aparecerá en el checkout
                     $has_empty_warn  = $is_active && empty( $enabled_comunas ) && empty( $custom_sectors );
-                ?>
-                <div class="hupkec-region-box<?php echo $has_empty_warn ? ' hupkec-region-box--empty-warn' : ''; ?>" data-region="<?php echo esc_attr($code); ?>">
-                    <div class="hupkec-region-header">
-                        <label class="hupkec-region-title">
-                            <input type="checkbox" class="hupkec-region-checkbox" data-region="<?php echo esc_attr($code); ?>"
-                                   name="hupkec_settings[enabled_regions][]" value="<?php echo esc_attr($code); ?>" <?php checked($is_active); ?>>
-                            <strong><?php echo esc_html($name); ?></strong>
-                        </label>
-                        <div class="hupkec-region-actions">
-                            <button type="button" class="hupkec-btn-micro hupkec-sel-all-region" data-region="<?php echo esc_attr($code); ?>" title="Seleccionar todas">✓</button>
-                            <button type="button" class="hupkec-btn-micro hupkec-desel-all-region" data-region="<?php echo esc_attr($code); ?>" title="Deseleccionar todas">✗</button>
-                            <button type="button" class="hupkec-btn-micro hupkec-invert-region" data-region="<?php echo esc_attr($code); ?>" title="Invertir selección">↔</button>
-                            <span class="hupkec-region-count" id="hupkec-count-<?php echo esc_attr($code); ?>"><?php echo count($enabled_comunas).'/'.count($comunas[$code]); ?></span>
-                        </div>
-                    </div>
-                    <div class="hupkec-comunas-grid">
-                        <?php
-                        $display_comunas = $comunas[$code];
-                        usort($display_comunas, function($a, $b) {
-                            return strcmp(
-                                iconv('UTF-8','ASCII//TRANSLIT', mb_strtolower($a)),
-                                iconv('UTF-8','ASCII//TRANSLIT', mb_strtolower($b))
-                            );
-                        });
-                        foreach ($display_comunas as $comuna): ?>
-                        <label class="hupkec-comuna-item" data-comuna="<?php echo esc_attr(mb_strtolower($comuna)); ?>">
-                            <input type="checkbox" class="hupkec-comuna-checkbox hupkec-comuna-<?php echo esc_attr($code); ?>"
-                                   name="hupkec_settings[enabled_comunas][<?php echo esc_attr($code); ?>][]"
-                                   value="<?php echo esc_attr($comuna); ?>" <?php checked(in_array($comuna,$enabled_comunas,true)); ?>>
-                            <?php echo esc_html($comuna); ?>
-                        </label>
-                        <?php endforeach; ?>
-                    </div>
-                    <div class="hupkec-region-footer">
-                        <div class="hupkec-footer-label">
-                            Sectores personalizados
-                            <span class="hupkec-footer-hint">(aparecen en la misma lista de comunas en el checkout)</span>
-                        </div>
-                        <div class="hupkec-sectors-wrapper" data-region="<?php echo esc_attr($code); ?>">
-                            <?php foreach ($custom_sectors as $idx => $sector): ?>
-                            <div class="hupkec-sector-item">
-                                <span class="hupkec-sector-icon">⊙</span>
-                                <input type="text"
-                                       name="hupkec_settings[custom_sectors][<?php echo esc_attr($code); ?>][<?php echo esc_attr($idx); ?>][name]"
-                                       value="<?php echo esc_attr($sector['name']); ?>"
-                                       data-sector-name="<?php echo esc_attr($sector['name']); ?>"
-                                       placeholder="Nombre del sector">
-                                <button type="button" class="hupkec-remove-sector" title="Eliminar sector">✕</button>
+
+                    $display_comunas = $comunas[ $code ];
+                    usort( $display_comunas, function( $a, $b ) {
+                        return strcmp( remove_accents( mb_strtolower( $a ) ), remove_accents( mb_strtolower( $b ) ) );
+                    } );
+                    ?>
+                    <div class="hup-checkgroup hupkec-region-box<?php echo $has_empty_warn ? ' is-empty' : ''; ?>" data-region="<?php echo esc_attr( $code ); ?>">
+                        <div class="hup-checkgroup__head">
+                            <label class="hup-check">
+                                <input type="checkbox" class="hupkec-region-checkbox" data-region="<?php echo esc_attr( $code ); ?>"
+                                       value="<?php echo esc_attr( $code ); ?>" <?php checked( $is_active ); ?>>
+                                <?php echo esc_html( $name ); ?>
+                            </label>
+                            <span class="hup-badge hup-badge--warning hupkec-region-warn"<?php echo $has_empty_warn ? '' : ' hidden'; ?>>Sin comunas: no aparece en el checkout</span>
+                            <div class="hup-checkgroup__actions">
+                                <button type="button" class="hup-btn hup-btn--ghost hup-btn--sm hupkec-sel-all-region" data-region="<?php echo esc_attr( $code ); ?>">Todas</button>
+                                <button type="button" class="hup-btn hup-btn--ghost hup-btn--sm hupkec-desel-all-region" data-region="<?php echo esc_attr( $code ); ?>">Ninguna</button>
+                                <button type="button" class="hup-btn hup-btn--ghost hup-btn--sm hupkec-invert-region" data-region="<?php echo esc_attr( $code ); ?>">Invertir</button>
                             </div>
+                            <span class="hup-count hupkec-region-count"><?php echo esc_html( count( array_intersect( $comunas[ $code ], $enabled_comunas ) ) . '/' . count( $comunas[ $code ] ) ); ?></span>
+                        </div>
+                        <div class="hup-checkgroup__body hup-checkgroup__body--scroll">
+                            <?php foreach ( $display_comunas as $comuna ) : ?>
+                                <label class="hup-check hupkec-comuna-item">
+                                    <input type="checkbox" class="hupkec-comuna-checkbox" value="<?php echo esc_attr( $comuna ); ?>" <?php checked( in_array( $comuna, $enabled_comunas, true ) ); ?>>
+                                    <?php echo esc_html( $comuna ); ?>
+                                </label>
                             <?php endforeach; ?>
                         </div>
-                        <div class="hupkec-sector-add-row">
-                            <input type="text" class="hupkec-new-sector hupkec-input" placeholder="Ej: Ciudad Satélite, Parque Industrial...">
-                            <button type="button" class="hupkec-btn hupkec-btn-add-sector hupkec-add-sector" data-region="<?php echo esc_attr($code); ?>">
-                                + Agregar sector
-                            </button>
+                        <div class="hup-checkgroup__foot">
+                            <span class="hup-group-label">Sectores personalizados <?php $this->tip( 'Lugares que no son comunas oficiales (un condominio, un parque industrial). Aparecen en la misma lista de comunas del checkout.' ); ?></span>
+                            <div class="hup-repeater hupkec-sectors-wrapper" data-hup-repeater data-region="<?php echo esc_attr( $code ); ?>" style="--hup-cols: minmax(0, 1fr) 34px">
+                                <template>
+                                    <div class="hup-repeater__row">
+                                        <input type="text" class="hup-input hupkec-sector-input" placeholder="Ej: Chicureo, Parque Industrial…" aria-label="Nombre del sector">
+                                        <button type="button" class="hup-btn hup-btn--icon hup-btn--danger-outline" data-hup-remove aria-label="Quitar sector"><span class="dashicons dashicons-no-alt" aria-hidden="true"></span></button>
+                                    </div>
+                                </template>
+                                <?php foreach ( $custom_sectors as $sector ) : ?>
+                                    <div class="hup-repeater__row">
+                                        <input type="text" class="hup-input hupkec-sector-input" value="<?php echo esc_attr( $sector['name'] ); ?>" aria-label="Nombre del sector">
+                                        <button type="button" class="hup-btn hup-btn--icon hup-btn--danger-outline" data-hup-remove aria-label="Quitar sector"><span class="dashicons dashicons-no-alt" aria-hidden="true"></span></button>
+                                    </div>
+                                <?php endforeach; ?>
+                                <div><button type="button" class="hup-btn hup-btn--add hup-btn--sm" data-hup-add><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span>Agregar sector</button></div>
+                            </div>
                         </div>
-                        <?php if ( empty($custom_sectors) ): ?>
-                        <p class="hupkec-sectors-empty-hint">Sin sectores personalizados. Puedes agregar zonas que no aparecen en la lista de comunas.</p>
-                        <?php endif; ?>
                     </div>
-                    <?php if ( $has_empty_warn ): ?>
-                    <p class="hupkec-region-empty-warn">⚠ Región activa sin comunas seleccionadas — no aparecerá en el checkout hasta que actives al menos una comuna.</p>
-                    <?php endif; ?>
-                </div>
                 <?php endforeach; ?>
+                </div>
             </div>
-            <div class="hupkec-form-submit-row">
-                <button type="button" id="hupkec-save-comunas-btn" class="hupkec-btn-primary">Guardar cambios</button>
+            <div class="hup-card__foot">
+                <button type="submit" id="hupkec-save-comunas-btn" class="hup-btn"><span class="dashicons dashicons-yes" aria-hidden="true"></span>Guardar comunas</button>
             </div>
         </form>
         <?php
     }
 
-    /* ── ZONAS ─────────────────────────────────────────── */
+    /* ── DESPACHO (ZONAS) ─────────────────────────────────── */
     private function tab_zonas() {
+        $zone_ok = HUPKEC_Shipping::zone_exists();
         ?>
-        <div class="hupkec-zone-system-notice">
-            <div class="hupkec-zone-system-icon">⚙️</div>
-            <div class="hupkec-zone-system-text">
-                <strong>Este módulo crea automáticamente una zona de envío en WooCommerce → Ajustes → Envío.</strong>
-                Esa zona es necesaria para que los costos de despacho funcionen correctamente en el checkout — no debe eliminarse.
-                Si accidentalmente la borraste, usa el botón para recrearla.
+        <div class="hup-grid hup-grid--aside">
+            <div class="hup-card">
+                <div class="hup-card__head">
+                    <div>
+                        <h3 class="hup-card__title">Zonas de despacho</h3>
+                        <p class="hup-card__desc">Cada comuna puede estar en una sola zona. El costo se suma al total del carrito.</p>
+                    </div>
+                    <button type="button" class="hup-btn" id="hupkec-new-zone-btn"><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span>Nueva zona</button>
+                </div>
+                <div class="hup-card__body">
+                    <div id="hupkec-zones-list"></div>
+                </div>
             </div>
-            <div class="hupkec-zone-actions-row">
-                <button type="button" class="hupkec-btn hupkec-btn-recreate" id="hupkec-recreate-zone-btn">
-                    🔄 Verificar / Recrear zona de envío
-                </button>
-                <a href="<?php echo esc_url( admin_url( 'admin.php?page=wc-settings&tab=shipping' ) ); ?>" target="_blank" class="hupkec-btn hupkec-btn-link">
-                    → Ver zonas de envío
-                </a>
+
+            <div class="hup-stack">
+                <div class="hup-card">
+                    <div class="hup-card__head">
+                        <div>
+                            <h3 class="hup-card__title">Zona en WooCommerce</h3>
+                            <p class="hup-card__desc">El cálculo vive en la zona «HUP - Kit Ecommerce Chile (NO BORRAR)». No la elimines.</p>
+                        </div>
+                        <?php if ( $zone_ok ) : ?>
+                            <span class="hup-badge hup-badge--success hup-badge--dot" id="hupkec-wc-zone-badge">Activa</span>
+                        <?php else : ?>
+                            <span class="hup-badge hup-badge--danger hup-badge--dot" id="hupkec-wc-zone-badge">Falta</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="hup-card__body">
+                        <div class="hup-notice" id="hupkec-recreate-msg" role="status" hidden>
+                            <span class="dashicons dashicons-yes-alt" aria-hidden="true"></span><p></p>
+                        </div>
+                        <div class="hup-inline">
+                            <button type="button" class="hup-btn hup-btn--secondary hup-btn--sm" id="hupkec-recreate-zone-btn"><span class="dashicons dashicons-update" aria-hidden="true"></span>Verificar o recrear</button>
+                            <a href="<?php echo esc_url( admin_url( 'admin.php?page=wc-settings&tab=shipping' ) ); ?>" target="_blank" rel="noopener" class="hup-btn hup-btn--ghost hup-btn--sm">Ver zonas de WooCommerce</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hup-card">
+                    <div class="hup-card__head">
+                        <div>
+                            <h3 class="hup-card__title">Probar una comuna</h3>
+                            <p class="hup-card__desc">Simula el despacho y revisa la configuración que WooCommerce necesita.</p>
+                        </div>
+                    </div>
+                    <div class="hup-card__body">
+                        <div class="hup-field hup-field--stacked">
+                            <label class="hup-label" for="hupkec-test-comuna">Comuna</label>
+                            <div class="hup-control"><select id="hupkec-test-comuna" class="hup-select"></select></div>
+                        </div>
+                        <div class="hup-field hup-field--stacked">
+                            <label class="hup-label" for="hupkec-test-subtotal">Subtotal del carrito <?php $this->tip( 'Para probar el umbral de envío gratis de las zonas con monto fijo.' ); ?></label>
+                            <div class="hup-control">
+                                <div class="hup-input-group"><span class="hup-input-group__addon">$</span><input type="number" id="hupkec-test-subtotal" class="hup-input" min="0" step="1" placeholder="0"></div>
+                            </div>
+                        </div>
+                        <div><button type="button" class="hup-btn hup-btn--secondary" id="hupkec-test-btn"><span class="dashicons dashicons-search" aria-hidden="true"></span>Probar</button></div>
+                        <div id="hupkec-test-result" class="hup-stack" aria-live="polite" hidden></div>
+                    </div>
+                </div>
             </div>
         </div>
-        <div id="hupkec-recreate-msg" class="hupkec-recreate-msg" style="display:none;"></div>
 
-        <p class="hupkec-tab-desc">Agrupa comunas activas y asígnales un costo de envío.</p>
-
-        <div id="hupkec-zones-list"></div>
-        <button type="button" class="hupkec-btn-primary" id="hupkec-new-zone-btn">+ Nueva zona de despacho</button>
-
-        <div id="hupkec-zone-form" class="hupkec-zone-form-wrap" style="display:none;">
-            <div class="hupkec-zone-form-header">
-                <h3 id="hupkec-zone-form-title">Nueva zona de despacho</h3>
-                <button type="button" class="hupkec-btn" id="hupkec-cancel-zone">Cancelar</button>
-            </div>
-            <input type="hidden" id="hupkec-zone-id">
-            <div class="hupkec-zone-form-grid">
-                <div class="hupkec-zone-form-left">
-                    <div class="hupkec-field-group"><label class="hupkec-field-label">Nombre *</label><input type="text" id="hz-name" class="hupkec-input" placeholder="Ej: Zona Express RM"></div>
-                    <div class="hupkec-field-group"><label class="hupkec-field-label">Color</label><input type="color" id="hz-color" value="#378ADD" class="hupkec-color-input"></div>
-                    <div class="hupkec-field-group">
-                        <label class="hupkec-field-label">Costo de envío</label>
-                        <select id="hz-cost-type" class="hupkec-input">
-                            <?php foreach ( HUPKEC_Shipping::get_cost_types() as $ct_key => $ct_label ) : ?>
-                            <option value="<?php echo esc_attr( $ct_key ); ?>"><?php echo esc_html( $ct_label ); ?></option>
-                            <?php endforeach; ?>
-                        </select>
+        <div class="hup-modal" id="hupkec-zone-modal" hidden>
+            <div class="hup-modal__box hup-modal__box--wide" role="dialog" aria-modal="true" aria-labelledby="hupkec-zone-form-title">
+                <div class="hup-card__head">
+                    <h3 class="hup-card__title" id="hupkec-zone-form-title">Nueva zona de despacho</h3>
+                    <button type="button" class="hup-btn hup-btn--icon" data-hup-close aria-label="Cerrar"><span class="dashicons dashicons-no-alt" aria-hidden="true"></span></button>
+                </div>
+                <div class="hup-card__body hup-modal__scroll">
+                    <input type="hidden" id="hupkec-zone-id">
+                    <div class="hup-field">
+                        <label class="hup-label" for="hz-name">Nombre</label>
+                        <div class="hup-control"><input type="text" id="hz-name" class="hup-input" placeholder="Ej: Santiago centro" required></div>
                     </div>
-                    <div class="hupkec-field-group" id="hz-cost-value-row" style="display:none;"><label class="hupkec-field-label">Monto ($)</label><input type="number" id="hz-cost-value" class="hupkec-input" min="0"></div>
-                    <div class="hupkec-field-group" id="hz-free-from-row" style="display:none;"><label class="hupkec-field-label">Envío gratis desde ($) <small style="font-weight:400;color:#666">— opcional, 0 = sin umbral</small></label><input type="number" id="hz-free-from" class="hupkec-input" min="0" placeholder="Ej: 50000"></div>
+                    <div class="hup-field">
+                        <label class="hup-label" for="hz-color">Color <?php $this->tip( 'Solo para distinguir la zona en este panel.' ); ?></label>
+                        <div class="hup-control"><input type="color" id="hz-color" value="#378ADD" class="hup-input hup-input--sm"></div>
+                    </div>
+                    <div class="hup-field">
+                        <label class="hup-label" for="hz-cost-type">Costo de envío <?php $this->tip( '«Por pagar» no cobra en la tienda: el cliente paga el despacho al recibir.' ); ?></label>
+                        <div class="hup-control">
+                            <select id="hz-cost-type" class="hup-select">
+                                <?php foreach ( HUPKEC_Shipping::get_cost_types() as $ct_key => $ct_label ) : ?>
+                                    <option value="<?php echo esc_attr( $ct_key ); ?>"><?php echo esc_html( $ct_label ); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <?php // display en línea, no [hidden]: el addon Pro muestra estas filas con style.display. ?>
+                    <div class="hup-field" id="hz-cost-value-row" style="display:none">
+                        <label class="hup-label" for="hz-cost-value">Monto</label>
+                        <div class="hup-control">
+                            <div class="hup-input-group"><span class="hup-input-group__addon">$</span><input type="number" id="hz-cost-value" class="hup-input" min="0" step="1"></div>
+                        </div>
+                    </div>
+                    <div class="hup-field" id="hz-free-from-row" style="display:none">
+                        <label class="hup-label" for="hz-free-from">Gratis desde <?php $this->tip( 'Si el subtotal del carrito llega a este monto, el despacho sale gratis. Déjalo vacío para no usar umbral.' ); ?></label>
+                        <div class="hup-control">
+                            <div class="hup-input-group"><span class="hup-input-group__addon">$</span><input type="number" id="hz-free-from" class="hup-input" min="0" step="1" placeholder="Ej: 50000"></div>
+                        </div>
+                    </div>
                     <!-- Ancla de extensión: un addon inyecta aquí sus controles de
                          zona (fórmulas, costos por clase, información de entrega)
                          escuchando la acción JS 'hupkec.admin.ready'. Ver docs/hooks.md. -->
                     <div id="hupkec-zone-form-extra"></div>
-                </div>
-                <div class="hupkec-zone-form-right">
-                    <div class="hupkec-field-group">
-                        <label class="hupkec-field-label">Comunas incluidas en esta zona</label>
-                        <div class="hupkec-zone-comunas-toolbar">
-                            <input type="text" id="hz-comunas-search" class="hupkec-input hupkec-search-sm" placeholder="Buscar comuna...">
-                            <button type="button" class="hupkec-btn hupkec-btn-sm" id="hz-sel-all">✓ Sel. todas</button>
-                            <button type="button" class="hupkec-btn hupkec-btn-sm" id="hz-desel-all">✗ Desel. todas</button>
-                            <button type="button" class="hupkec-btn hupkec-btn-sm hupkec-btn-invert" id="hz-invert-zone">↔ Invertir</button>
+
+                    <div class="hup-field hup-field--stacked">
+                        <span class="hup-label">Comunas de la zona</span>
+                        <div class="hup-control">
+                            <div class="hup-toolbar">
+                                <div class="hup-search">
+                                    <span class="dashicons dashicons-search" aria-hidden="true"></span>
+                                    <input type="search" id="hz-comunas-search" class="hup-input" placeholder="Buscar comuna…" aria-label="Buscar comuna">
+                                </div>
+                                <div class="hup-btn-group" role="group" aria-label="Acciones sobre las comunas">
+                                    <button type="button" id="hz-sel-all">Todas</button>
+                                    <button type="button" id="hz-desel-all">Ninguna</button>
+                                    <button type="button" id="hz-invert-zone">Invertir</button>
+                                </div>
+                            </div>
+                            <div id="hz-comunas-selector" class="hup-stack"></div>
+                            <p class="hup-hint"><strong id="hz-selected-count">0</strong> comunas seleccionadas</p>
                         </div>
-                        <div id="hz-comunas-selector" class="hupkec-comunas-zone-selector">
-                            <!-- Generado dinámicamente por ZonasManager.buildComunasSelector() en hupkec-admin.js -->
-                        </div>
-                        <div class="hupkec-zone-selected-count"><span id="hz-selected-count">0</span> comunas seleccionadas</div>
                     </div>
                 </div>
-            </div>
-            <div class="hupkec-zone-form-footer">
-                <button type="button" class="hupkec-btn" id="hupkec-cancel-zone-2">Cancelar</button>
-                <button type="button" class="hupkec-btn-primary" id="hupkec-save-zone">Guardar zona</button>
+                <div class="hup-card__foot">
+                    <button type="button" class="hup-btn" id="hupkec-save-zone"><span class="dashicons dashicons-yes" aria-hidden="true"></span>Guardar zona</button>
+                    <button type="button" class="hup-btn hup-btn--ghost" id="hupkec-cancel-zone" data-hup-close>Cancelar</button>
+                </div>
             </div>
         </div>
         <?php
@@ -748,109 +963,207 @@ class HUPKEC_Admin {
     /* ── CAMPOS ─────────────────────────────────────────── */
     private function tab_campos() {
         $field_types = hupkec_custom_field_types();
+        $billing_on  = hupkec_billing_module_active();
         ?>
-        <p class="hupkec-tab-desc">Arrastra para reordenar, activa/desactiva y personaliza los campos. <span class="hupkec-badge-hup">HUP</span> son campos chilenos del plugin. El campo País es fijo.</p>
-        <div class="hupkec-fields-subtabs">
-            <button class="hupkec-fields-subtab active" data-section="billing">Campos de facturación</button>
-            <button class="hupkec-fields-subtab" data-section="shipping">Campos de envío</button>
-            <button class="hupkec-fields-subtab" data-section="additional">Campos adicionales</button>
-        </div>
-        <div id="hupkec-fields-editor"></div>
-        <div class="hupkec-fields-actions">
-            <button type="button" class="hupkec-btn" id="hupkec-reset-fields">↺ Restaurar por defecto</button>
-            <button type="button" class="hupkec-btn" id="hupkec-add-field">+ Agregar campo personalizado</button>
-            <button type="button" class="hupkec-btn-primary" id="hupkec-save-fields">Guardar cambios</button>
+        <div class="hup-card">
+            <div class="hup-card__head">
+                <div>
+                    <h3 class="hup-card__title">Campos del checkout</h3>
+                    <p class="hup-card__desc">Arrastra para ordenar, enciende o apaga y edita cada campo. El país es fijo: Chile.</p>
+                </div>
+            </div>
+            <div class="hup-card__body">
+                <div class="hup-tabs" role="tablist" aria-label="Sección del formulario">
+                    <a href="#" role="tab" class="hupkec-fields-subtab is-active" data-section="billing" aria-selected="true">Facturación</a>
+                    <a href="#" role="tab" class="hupkec-fields-subtab" data-section="shipping" aria-selected="false">Envío</a>
+                    <a href="#" role="tab" class="hupkec-fields-subtab" data-section="additional" aria-selected="false">Adicionales</a>
+                </div>
+                <ul id="hupkec-fields-editor" class="hup-sortable"></ul>
+                <div><button type="button" class="hup-btn hup-btn--add" id="hupkec-add-field"><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span>Agregar campo personalizado</button></div>
+            </div>
+            <div class="hup-card__foot">
+                <button type="button" class="hup-btn" id="hupkec-save-fields"><span class="dashicons dashicons-yes" aria-hidden="true"></span>Guardar campos</button>
+            </div>
         </div>
 
-        <!-- Módulo de facturación -->
-        <div class="hupkec-card hupkec-billing-module-card" style="margin-top:24px">
-            <div class="hupkec-billing-module-header">
+        <div class="hup-card">
+            <div class="hup-card__head">
                 <div>
-                    <h3 style="margin:0 0 4px">Módulo de Facturación</h3>
-                    <p class="hupkec-tab-desc" style="margin:0">Al activarlo, aparece un checkbox <strong>"¿Necesitas factura?"</strong> en el checkout. Si el cliente lo marca, se despliegan los campos de empresa necesarios para emitir factura en Chile.</p>
+                    <h3 class="hup-card__title" id="hupkec-billing-module-title">Datos de facturación para empresas</h3>
+                    <p class="hup-card__desc">Agrega al checkout la casilla «¿Necesitas factura?». Si el cliente la marca, se piden los datos de su empresa.</p>
                 </div>
-                <label class="hupkec-toggle" for="hupkec-billing-module-toggle">
-                    <input type="checkbox" id="hupkec-billing-module-toggle" <?php checked( hupkec_billing_module_active() ); ?>>
-                    <span class="hupkec-toggle-track"></span><span class="hupkec-toggle-thumb"></span>
+                <label class="hup-toggle" for="hupkec-billing-module-toggle">
+                    <input type="checkbox" id="hupkec-billing-module-toggle" aria-labelledby="hupkec-billing-module-title" <?php checked( $billing_on ); ?>>
+                    <span class="hup-toggle__track"></span>
                 </label>
             </div>
-            <div id="hupkec-billing-module-preview" class="hupkec-billing-preview <?php echo hupkec_billing_module_active() ? '' : 'hupkec-hidden'; ?>">
-                <div class="hupkec-bp-label">Campos que se mostrarán al cliente cuando marque <strong>"¿Necesitas factura?"</strong>:</div>
-                <div class="hupkec-bp-fields">
-                    <span class="hupkec-bp-field">Nombre de la empresa</span>
-                    <span class="hupkec-bp-field">RUT de la empresa <span class="hupkec-badge-hup">RUT</span></span>
-                    <span class="hupkec-bp-field">Giro de la empresa</span>
-                    <span class="hupkec-bp-field">Región de la empresa</span>
-                    <span class="hupkec-bp-field">Comuna de la empresa</span>
-                    <span class="hupkec-bp-field">Dirección de la empresa</span>
+            <div class="hup-card__body" id="hupkec-billing-module-preview"<?php echo $billing_on ? '' : ' hidden'; ?>>
+                <div class="hup-chips">
+                    <?php foreach ( [ 'Razón social', 'RUT de la empresa', 'Giro', 'Región', 'Comuna', 'Dirección' ] as $bf ) : ?>
+                        <span class="hup-badge"><?php echo esc_html( $bf ); ?></span>
+                    <?php endforeach; ?>
                 </div>
-                <p style="font-size:12px;color:#999;margin:8px 0 0">El cliente puede copiar su región, comuna y dirección principal con un clic.</p>
+                <p class="hup-hint">El cliente puede copiar su región, comuna y dirección con un clic. El RUT de la empresa se valida igual que el del comprador.</p>
             </div>
         </div>
 
-        <!-- Modal editar campo -->
-        <div id="hupkec-field-modal" class="hupkec-modal" style="display:none;">
-            <div class="hupkec-modal-box hupkec-modal-sm">
-                <div class="hupkec-modal-header">
-                    <h3 id="hupkec-field-modal-title">Editar campo</h3>
-                    <button type="button" class="hupkec-modal-close" id="hupkec-close-field-modal">×</button>
+        <div class="hup-card hup-card--danger">
+            <div class="hup-card__head">
+                <div>
+                    <h3 class="hup-card__title">Restaurar campos</h3>
+                    <p class="hup-card__desc">Vuelve al formulario original del plugin. Se pierden el orden, los cambios y los campos personalizados.</p>
                 </div>
-                <div class="hupkec-modal-body">
+            </div>
+            <div class="hup-card__foot">
+                <button type="button" class="hup-btn hup-btn--danger-outline" id="hupkec-reset-fields"><span class="dashicons dashicons-image-rotate" aria-hidden="true"></span>Restaurar campos</button>
+            </div>
+        </div>
+
+        <div class="hup-modal" id="hupkec-field-modal" hidden>
+            <div class="hup-modal__box hup-modal__box--wide" role="dialog" aria-modal="true" aria-labelledby="hupkec-field-modal-title">
+                <div class="hup-card__head">
+                    <h3 class="hup-card__title" id="hupkec-field-modal-title">Editar campo</h3>
+                    <button type="button" class="hup-btn hup-btn--icon" id="hupkec-close-field-modal" data-hup-close aria-label="Cerrar"><span class="dashicons dashicons-no-alt" aria-hidden="true"></span></button>
+                </div>
+                <div class="hup-card__body hup-modal__scroll">
                     <input type="hidden" id="hf-section">
                     <input type="hidden" id="hf-index">
-                    <div class="hupkec-field-group" id="hf-type-group">
-                        <label class="hupkec-field-label">Tipo de campo</label>
-                        <select id="hf-type" class="hupkec-input">
-                            <?php foreach ($field_types as $val => $label): ?>
-                            <option value="<?php echo esc_attr($val); ?>"><?php echo esc_html($label); ?></option>
-                            <?php endforeach; ?>
-                        </select>
+                    <div class="hup-field" id="hf-type-group">
+                        <label class="hup-label" for="hf-type">Tipo de campo</label>
+                        <div class="hup-control">
+                            <select id="hf-type" class="hup-select">
+                                <?php foreach ( $field_types as $val => $label ) : ?>
+                                    <option value="<?php echo esc_attr( $val ); ?>"><?php echo esc_html( $label ); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
                     </div>
-                    <div class="hupkec-field-group">
-                        <label class="hupkec-field-label">Etiqueta (label)</label>
-                        <input type="text" id="hf-label" class="hupkec-input">
+                    <div class="hup-field">
+                        <label class="hup-label" for="hf-label">Etiqueta</label>
+                        <div class="hup-control"><input type="text" id="hf-label" class="hup-input" required></div>
                     </div>
-                    <div class="hupkec-field-group" id="hf-placeholder-group">
-                        <label class="hupkec-field-label">Placeholder</label>
-                        <input type="text" id="hf-placeholder" class="hupkec-input">
+                    <div class="hup-field" id="hf-placeholder-group">
+                        <label class="hup-label" for="hf-placeholder">Texto de ejemplo <?php $this->tip( 'El texto gris que se ve dentro del campo vacío (placeholder).' ); ?></label>
+                        <div class="hup-control"><input type="text" id="hf-placeholder" class="hup-input"></div>
                     </div>
-                    <div class="hupkec-field-group" id="hf-options-group" style="display:none;">
-                        <label class="hupkec-field-label">Opciones (una por línea, formato: valor|Etiqueta)</label>
-                        <textarea id="hf-options" class="hupkec-input" rows="5" placeholder="opcion1|Opción 1&#10;opcion2|Opción 2"></textarea>
+                    <div class="hup-field" id="hf-options-group" style="display:none">
+                        <label class="hup-label" for="hf-options">Opciones <?php $this->tip( 'Una por línea, con el formato valor|Etiqueta. Si omites la etiqueta, se usa el valor.' ); ?></label>
+                        <div class="hup-control"><textarea id="hf-options" class="hup-input hup-input--mono" rows="5" placeholder="retiro|Retiro en tienda&#10;despacho|Despacho a domicilio"></textarea></div>
                     </div>
-                    <div class="hupkec-field-group" id="hf-default-group">
-                        <label class="hupkec-field-label">Valor por defecto <small style="font-weight:400;color:#666">— opcional</small></label>
-                        <input type="text" id="hf-default" class="hupkec-input">
+                    <div class="hup-field" id="hf-default-group">
+                        <label class="hup-label" for="hf-default">Valor por defecto</label>
+                        <div class="hup-control"><input type="text" id="hf-default" class="hup-input"></div>
                     </div>
-                    <div class="hupkec-field-group">
-                        <label class="hupkec-field-label">Clase CSS <small style="font-weight:400;color:#666">— opcional, para estilos del tema</small></label>
-                        <input type="text" id="hf-cssclass" class="hupkec-input" placeholder="mi-clase otra-clase">
+                    <div class="hup-field">
+                        <span class="hup-label">Ancho</span>
+                        <div class="hup-control">
+                            <div class="hup-seg" role="radiogroup" aria-label="Ancho del campo">
+                                <label><input type="radio" name="hf-width" value="wide" checked><span>Completo</span></label>
+                                <label><input type="radio" name="hf-width" value="first"><span>Mitad izquierda</span></label>
+                                <label><input type="radio" name="hf-width" value="last"><span>Mitad derecha</span></label>
+                            </div>
+                        </div>
                     </div>
-                    <div class="hupkec-field-group">
-                        <label class="hupkec-field-label">Ancho</label>
-                        <select id="hf-width" class="hupkec-input">
-                            <option value="wide">100% — ancho completo</option>
-                            <option value="first">50% — lado izquierdo</option>
-                            <option value="last">50% — lado derecho</option>
-                        </select>
+                    <div class="hup-field">
+                        <span class="hup-label">Obligatorio</span>
+                        <div class="hup-control"><label class="hup-toggle" for="hf-required"><input type="checkbox" id="hf-required"><span class="hup-toggle__track"></span> El cliente debe completarlo</label></div>
                     </div>
-                    <div class="hupkec-field-group">
-                        <label><input type="checkbox" id="hf-required"> Campo obligatorio</label>
+                    <div class="hup-field" id="hf-visibility-group">
+                        <span class="hup-label">Dónde se muestra <?php $this->tip( 'Solo para campos personalizados. Desmárcalo para datos internos que el cliente no debe ver.' ); ?></span>
+                        <div class="hup-control">
+                            <label class="hup-check"><input type="checkbox" id="hf-show-email" checked> En los correos del pedido</label>
+                            <label class="hup-check"><input type="checkbox" id="hf-show-order" checked> En la ficha del pedido y la página de gracias</label>
+                        </div>
                     </div>
-                    <div class="hupkec-field-group" id="hf-visibility-group">
-                        <label class="hupkec-field-label">¿Dónde se muestra el dato?</label>
-                        <label><input type="checkbox" id="hf-show-email" checked> Mostrar en los emails del pedido</label><br>
-                        <label><input type="checkbox" id="hf-show-order" checked> Mostrar en la ficha del pedido y en la página de gracias</label>
-                        <p class="description" style="margin:6px 0 0">Aplica solo a los campos personalizados. Útil para datos internos que no quieres que vea el cliente.</p>
+                    <div class="hup-field">
+                        <label class="hup-label" for="hf-cssclass">Clase CSS <?php $this->tip( 'Opcional, para dar estilos desde el tema.' ); ?></label>
+                        <div class="hup-control"><input type="text" id="hf-cssclass" class="hup-input hup-input--mono" placeholder="mi-clase otra-clase"></div>
                     </div>
                     <!-- Ancla de extensión: un addon inyecta aquí sus secciones
                          (lógica condicional, reglas de validación) escuchando la
                          acción JS 'hupkec.admin.ready'. Ver docs/hooks.md. -->
                     <div id="hupkec-field-modal-extra"></div>
                 </div>
-                <div class="hupkec-modal-footer">
-                    <button type="button" class="hupkec-btn" id="hupkec-cancel-field">Cancelar</button>
-                    <button type="button" class="hupkec-btn-primary" id="hupkec-save-field">Aplicar</button>
+                <div class="hup-card__foot">
+                    <button type="button" class="hup-btn" id="hupkec-save-field"><span class="dashicons dashicons-yes" aria-hidden="true"></span>Aplicar</button>
+                    <button type="button" class="hup-btn hup-btn--ghost" id="hupkec-cancel-field" data-hup-close>Cancelar</button>
+                </div>
+            </div>
+        </div>
+        <?php
+    }
+
+    /* ── GUÍA ─────────────────────────────────────────── */
+    private function tab_guia() {
+        ?>
+        <div class="hup-grid hup-grid--aside">
+            <div class="hup-stack">
+                <div class="hup-card">
+                    <div class="hup-card__head">
+                        <div>
+                            <h3 class="hup-card__title">Configuración en cuatro pasos</h3>
+                            <p class="hup-card__desc">Lo mínimo para empezar a vender con despacho por comuna.</p>
+                        </div>
+                    </div>
+                    <div class="hup-card__body">
+                        <ol class="hup-steps">
+                            <li><div class="hup-steps__title">Elige dónde despachas</div><p class="hup-hint">En <strong>Comunas</strong>, deja marcadas solo las regiones y comunas que atiendes. Con el filtro apagado se ofrecen las 346 comunas del país.</p></li>
+                            <li><div class="hup-steps__title">Crea tus zonas de despacho</div><p class="hup-hint">Enciende <strong>Zonas de despacho</strong> en Inicio y, en <strong>Despacho</strong>, agrupa comunas con un costo: gratis, monto fijo (con umbral de envío gratis) o por pagar al recibir.</p></li>
+                            <li><div class="hup-steps__title">Ajusta el formulario de pago</div><p class="hup-hint">Con el <strong>Editor de campos</strong> encendido, el RUT se valida en el navegador y en el servidor, y el país queda fijo en Chile.</p></li>
+                            <li><div class="hup-steps__title">Prueba una comuna</div><p class="hup-hint">En <strong>Despacho → Probar una comuna</strong> ves qué zona y qué costo recibe el cliente, y si falta algo en WooCommerce.</p></li>
+                        </ol>
+                    </div>
+                </div>
+
+                <div class="hup-card">
+                    <div class="hup-card__head">
+                        <div><h3 class="hup-card__title">Preguntas frecuentes</h3></div>
+                    </div>
+                    <div class="hup-card__body">
+                        <details class="hup-accordion">
+                            <summary>El checkout dice que no hay métodos de envío</summary>
+                            <ul>
+                                <li>Usa <strong>Probar una comuna</strong> en Despacho: te dice qué falta.</li>
+                                <li>Revisa que la comuna esté en alguna zona y que exista la zona «HUP - Kit Ecommerce Chile (NO BORRAR)» en WooCommerce → Ajustes → Envío.</li>
+                                <li>WooCommerce guarda las tarifas en la sesión del cliente. Si cambiaste algo y no se refleja, cambia la comuna en el checkout o vacía el carrito.</li>
+                            </ul>
+                        </details>
+                        <details class="hup-accordion">
+                            <summary>¿Funciona con el checkout de bloques?</summary>
+                            <p>No. El plugin usa el checkout clásico de WooCommerce. Si tu página de pago usa el bloque «Finalizar compra», reemplázalo por el shortcode <code>[woocommerce_checkout]</code>. Funciona con Bricks, Elementor y temas que usan el checkout clásico.</p>
+                        </details>
+                        <details class="hup-accordion">
+                            <summary>¿Qué significa «Por pagar»?</summary>
+                            <p>La tienda no cobra el despacho: el cliente lo paga al recibir, directamente a la empresa de transporte. En el checkout se muestra como «Por pagar al recibir».</p>
+                        </details>
+                        <details class="hup-accordion">
+                            <summary>¿Cómo se valida el RUT?</summary>
+                            <p>Con el dígito verificador (módulo 11), mientras el cliente escribe y otra vez en el servidor al confirmar el pedido. Acepta 12.345.678-9, 12345678-9 y 123456789.</p>
+                        </details>
+                        <details class="hup-accordion">
+                            <summary>¿Qué es un sector personalizado?</summary>
+                            <p>Un lugar donde despachas que no es una comuna oficial, como un condominio o un parque industrial. Se agrega por región en Comunas y aparece en la misma lista del checkout.</p>
+                        </details>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hup-card">
+                <div class="hup-card__head">
+                    <div>
+                        <h3 class="hup-card__title">Soporte</h3>
+                        <p class="hup-card__desc">Te respondemos por correo.</p>
+                    </div>
+                </div>
+                <div class="hup-card__body">
+                    <dl class="hup-kv">
+                        <dt>Correo</dt>
+                        <dd><a href="<?php echo esc_url( 'mailto:contacto@hazmeunapagina.cl' ); ?>">contacto@hazmeunapagina.cl</a></dd>
+                        <dt>Sitio</dt>
+                        <dd><a href="<?php echo esc_url( 'https://www.hazmeunapagina.cl' ); ?>" target="_blank" rel="noopener">hazmeunapagina.cl</a></dd>
+                        <dt>Versión</dt>
+                        <dd><?php echo esc_html( HUPKEC_VERSION ); ?></dd>
+                    </dl>
                 </div>
             </div>
         </div>

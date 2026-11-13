@@ -2,10 +2,10 @@
 Contributors: hazmeunapagina
 Tags: chile, woocommerce, comunas, rut, checkout
 Requires at least: 6.0
-Tested up to: 7.0
+Tested up to: 7.1
 Requires Plugins: woocommerce
 Requires PHP: 8.0
-Stable tag: 1.1.2
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -103,6 +103,15 @@ Not yet. This version supports the classic (shortcode) Checkout only, and declar
 
 == Changelog ==
 
+= 1.2.0 =
+* New: redesigned settings screen using the design system shared by all HUP plugins, with a light side menu, a link for each section, cleaner cards and a new Guide section.
+* New: "Probar una comuna" tool in the Despacho section. It simulates the shipping cost for any comuna and checks the WooCommerce settings it depends on: shipping zone, shipping method, shipping countries and classic checkout.
+* Improved: shipping zones are listed in a table with their cost and coverage instead of the full list of comunas. The zone editor opens in a dialog and shows which comunas already belong to another zone.
+* Improved: comuna search ignores accents ("nunoa" finds "Ñuñoa").
+* Fixed: editing a zone could leave comunas with an apostrophe (such as O'Higgins) unchecked.
+* Fixed: field labels are now escaped in the checkout field editor.
+* Tested with WordPress 7.1.
+
 = 1.1.2 =
 * Fixed: the checkout could show "There are no shipping options available" even with zones configured. WooCommerce kept reusing shipping rates cached in the customer's session. The plugin now refreshes them when modules, zones, comunas or checkout fields change and after each update, and the selected comuna is part of the shipping package, so changing it always recalculates.
 * Fixed: with the checkout field editor active, custom checkout templates (page builders) could send an empty country, which placed the customer in the "Rest of the world" zone. Chile is now shown as the only country and enforced on the server.
@@ -135,6 +144,9 @@ Not yet. This version supports the classic (shortcode) Checkout only, and declar
 * HPOS compatible. Classic Checkout only.
 
 == Upgrade Notice ==
+
+= 1.2.0 =
+New settings design and a tool to test shipping for any comuna.
 
 = 1.1.2 =
 Fixes stores where the checkout showed no shipping options. Regions now use WooCommerce's standard codes; saved settings are migrated automatically. Recommended update.

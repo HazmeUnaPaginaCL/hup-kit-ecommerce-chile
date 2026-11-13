@@ -519,7 +519,9 @@ class HUPKEC_Shipping {
             $result = [
                 'zone'  => $zone['name'],
                 'type'  => $types[ $type ] ?? $type,
-                'cost'  => $type === 'cod' ? 'Por pagar al recibir' : ( $cost > 0 ? wp_strip_all_tags( wc_price( $cost ) ) : 'Gratis' ),
+                // Texto plano: el panel lo escapa al pintarlo. wc_price() codifica
+                // el símbolo ($ → &#36;), así que hay que decodificarlo.
+                'cost'  => $type === 'cod' ? 'Por pagar al recibir' : ( $cost > 0 ? html_entity_decode( wp_strip_all_tags( wc_price( $cost ) ), ENT_QUOTES, 'UTF-8' ) : 'Gratis' ),
             ];
         }
 

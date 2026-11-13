@@ -2,12 +2,11 @@
 /**
  * Plugin Name: HUP - Kit Ecommerce Chile
  * Description: Solución completa para tiendas WooCommerce en Chile: selector de regiones/comunas, validación de RUT, zonas de despacho, checkout personalizado y solicitud de datos de facturación para empresas.
- * Version: 1.1.2
+ * Version: 1.2.0
  * Author: HazmeUnaPagina.cl
  * Author URI: https://www.hazmeunapagina.cl
  * Text Domain: hup-kit-ecommerce-chile
  * Requires at least: 6.0
- * Tested up to: 7.0
  * Requires PHP: 8.0
  * Requires Plugins: woocommerce
  * WC requires at least: 7.0
@@ -18,7 +17,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'HUPKEC_VERSION',  '1.1.2' );
+define( 'HUPKEC_VERSION',  '1.2.0' );
 define( 'HUPKEC_PATH',     plugin_dir_path( __FILE__ ) );
 define( 'HUPKEC_URL',      plugin_dir_url( __FILE__ ) );
 define( 'HUPKEC_BASENAME', plugin_basename( __FILE__ ) );

@@ -43,3 +43,10 @@ eslint.config.js
 
 # Documentación de desarrollo
 docs
+
+# Sistema de diseño HUP: solo se distribuyen tokens.css, hup-admin.css,
+# hup-admin.js e index.php. El catálogo y las notas son de desarrollo.
+hup-ui/componentes.html
+hup-ui/README.md
+hup-ui/CHANGELOG.md
+.diseno-plugin

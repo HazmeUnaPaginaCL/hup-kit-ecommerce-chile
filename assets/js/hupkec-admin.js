@@ -1,10 +1,13 @@
 /**
- * HUP - Kit Ecommerce Chile — Admin JS v1.1.0
- * Sistema oficial HUP (HazmeUnaPagina.cl)
- * - HTML5 Drag & Drop nativo
- * - Sistema de toasts HUP
- * - Estados loading en botones
- * - Debounce en búsquedas
+ * HUP - Kit Ecommerce Chile — Admin JS 1.2.0
+ *
+ * Interfaz sobre el sistema de diseño HUP (hup-ui/). De hup-admin.js se usan
+ * HUP.toast(), los modales ([data-hup-close]) y las filas repetibles
+ * ([data-hup-add] / [data-hup-remove]); aquí va solo la lógica del plugin.
+ *
+ * Compatibilidad con el addon Pro: se conservan las clases y los IDs que el
+ * Pro usa para engancharse (.hupkec-tab-btn, .hupkec-panel, .hupkec-module-*,
+ * #hz-cost-type, #hf-type, #hf-options…) y las acciones/filtros de wp.hooks.
  */
 
 (function($) {
@@ -16,9 +19,9 @@
     /**
      * Envoltorio sobre wp.hooks.
      *
-     * El panel es una aplicación de jQuery que construye el modal de campos y el
-     * editor de zonas desde JS. Sin estos puntos de enganche, un addon podría
-     * añadir pestañas pero no un solo control dentro de lo que ya existe.
+     * El panel construye el modal de campos y el editor de zonas desde JS. Sin
+     * estos puntos de enganche, un addon podría añadir pestañas pero no un solo
+     * control dentro de lo que ya existe.
      *
      * Se envuelve en vez de llamar a wp.hooks directamente por dos razones: si la
      * dependencia no cargara, el panel sigue funcionando en vez de morir con un
@@ -26,7 +29,7 @@
      * el objeto que el plugin estaba a punto de guardar.
      */
     const Hooks = {
-        doAction: function(name) {
+        doAction: function() {
             if (!window.wp || !wp.hooks) return;
             wp.hooks.doAction.apply(null, arguments);
         },
@@ -46,7 +49,7 @@
          * Aplica un filtro que debe devolver un mensaje de error, o cadena vacía.
          * Sirve para que un addon bloquee el guardado con su propia validación.
          */
-        applyErrorFilter: function(name, value) {
+        applyErrorFilter: function() {
             if (!window.wp || !wp.hooks) return '';
             const result = wp.hooks.applyFilters.apply(null, arguments);
             return typeof result === 'string' ? result : '';
@@ -54,47 +57,16 @@
     };
 
     // ═══════════════════════════════════════════════════════════
-    // SISTEMA DE TOASTS HUP
+    // AVISOS (toasts de hup-ui)
     // ═══════════════════════════════════════════════════════════
     const HUPToast = {
-        show: function(message, type) {
-            // Buscar toast existente
-            let $toast = $('.hupkec-toast');
-            
-            if (!$toast.length) {
-                // Crear toast si no existe
-                $toast = $('<div class="hupkec-toast" role="status" aria-live="polite" aria-atomic="true"></div>').appendTo('body');
+        success: function(msg) { this.show(msg); },
+        info:    function(msg) { this.show(msg); },
+        error:   function(msg) { this.show(msg, 'error'); },
+        show: function(msg, type) {
+            if (window.HUP && typeof window.HUP.toast === 'function') {
+                window.HUP.toast(String(msg), type);
             }
-            
-            // Limpiar clases anteriores
-            $toast.removeClass('hupkec-toast-show hupkec-toast-success hupkec-toast-error');
-            
-            // Aplicar tipo
-            if (type === 'success') {
-                $toast.addClass('hupkec-toast-success');
-            } else if (type === 'error') {
-                $toast.addClass('hupkec-toast-error');
-            }
-            
-            // Mostrar mensaje
-            $toast.text(message).addClass('hupkec-toast-show');
-            
-            // Auto-ocultar después de 3 segundos
-            setTimeout(function() {
-                $toast.removeClass('hupkec-toast-show');
-            }, 3000);
-        },
-        
-        success: function(msg) {
-            this.show(msg, 'success');
-        },
-        
-        error: function(msg) {
-            this.show(msg, 'error');
-        },
-
-        info: function(msg) {
-            this.show(msg, 'info');
         }
     };
 
@@ -109,347 +81,269 @@
                 timeout = setTimeout(() => func.apply(this, args), wait);
             };
         },
-        
+
+        /** Botón en proceso: deshabilitado y con spinner de hup-ui. */
         setLoading: function($btn, loading) {
             if (loading) {
-                $btn.addClass('is-loading').prop('disabled', true);
+                $btn.prop('disabled', true).attr('aria-busy', 'true');
+                if (!$btn.find('.hup-spinner').length) $btn.prepend('<span class="hup-spinner" aria-hidden="true"></span>');
+                $btn.find('.dashicons').attr('hidden', true);
             } else {
-                $btn.removeClass('is-loading').prop('disabled', false);
+                $btn.prop('disabled', false).removeAttr('aria-busy');
+                $btn.find('.hup-spinner').remove();
+                $btn.find('.dashicons').removeAttr('hidden');
             }
+        },
+
+        /** Texto plano escapado para insertar en HTML. */
+        esc: function(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        },
+
+        /** Minúsculas sin tildes, para buscar "nunoa" y encontrar "Ñuñoa". */
+        fold: function(s) {
+            return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        },
+
+        /** Monto en formato chileno: 50000 → $50.000. */
+        money: function(n) {
+            const v = Math.round(parseFloat(n) || 0);
+            return '$' + v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        },
+
+        post: function(data) {
+            return $.post(hupkecAdmin.ajaxUrl, $.extend({ nonce: hupkecAdmin.nonce }, data));
         }
     };
 
     // ═══════════════════════════════════════════════════════════
-    // TABS NAVIGATION
+    // NAVEGACIÓN ENTRE SECCIONES
     // ═══════════════════════════════════════════════════════════
-    $('.hupkec-tab-btn').on('click', function() {
-        const tab = $(this).data('tab');
-        $('.hupkec-tab-btn').removeClass('is-active');
-        $(this).addClass('is-active');
-        $('.hupkec-panel').removeClass('is-active');
-        $('#tab-' + tab).addClass('is-active');
+    /**
+     * Cada sección tiene su URL (?page=hupkec-settings&tab=zonas) y el servidor
+     * abre la que corresponda. Además se cambia sin recargar: todos los paneles
+     * están impresos y se alterna .is-active, el mismo mecanismo que usa el
+     * addon Pro para abrir sus pestañas.
+     */
+    const Nav = {
+        open: function(tab, push) {
+            const $btn = $('.hupkec-tab-btn[data-tab="' + tab + '"]');
+            const $panel = $('#tab-' + tab);
+            if (!$btn.length || !$panel.length || $btn.hasClass('hupkec-hidden')) return false;
+
+            $('.hupkec-tab-btn').removeClass('is-active').removeAttr('aria-current');
+            $btn.addClass('is-active').attr('aria-current', 'page');
+            $('.hupkec-panel').removeClass('is-active');
+            $panel.addClass('is-active');
+
+            if (push && window.history && window.history.pushState) {
+                window.history.pushState({ hupkecTab: tab }, '', $btn.attr('href'));
+            }
+            return true;
+        }
+    };
+
+    $(document).on('click', '.hupkec-tab-btn, .hupkec-goto', function(e) {
+        // Ctrl/Cmd + clic: dejar que el navegador abra la pestaña nueva.
+        if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+        if (Nav.open($(this).data('tab'), true)) e.preventDefault();
+    });
+
+    $(window).on('popstate', function(e) {
+        const state = e.originalEvent && e.originalEvent.state;
+        Nav.open(state && state.hupkecTab ? state.hupkecTab : 'inicio', false);
     });
 
     // ═══════════════════════════════════════════════════════════
     // MÓDULOS (INICIO)
     // ═══════════════════════════════════════════════════════════
-    $('.hupkec-module-checkbox').on('change', function() {
-        const tab = $(this).data('tab');
-        const active = $(this).is(':checked') ? 1 : 0;
-        const modulesPayload = {
-            comunas: $('#hupkec-mod-comunas').is(':checked') ? 1 : 0,
-            shipping: $('#hupkec-mod-shipping').is(':checked') ? 1 : 0,
-            checkout: $('#hupkec-mod-checkout').is(':checked') ? 1 : 0
-        };
+    $(document).on('change', '.hupkec-module-checkbox', function() {
+        const $input = $(this);
+        const tab = $input.data('tab');
+        const active = $input.is(':checked');
 
-        $.post(hupkecAdmin.ajaxUrl, {
-            action: 'hupkec_save_modules',
-            nonce: hupkecAdmin.nonce,
-            comunas: modulesPayload.comunas,
-            shipping: modulesPayload.shipping,
-            checkout: modulesPayload.checkout
-        }, function(res) {
-            if (res.success) {
-                HUPToast.success('Módulo actualizado correctamente');
-                
-                // Mostrar/ocultar tab correspondiente
-                const $tabBtn = $('.hupkec-tab-btn[data-tab="' + tab + '"]');
-                if (active) {
-                    $tabBtn.removeClass('hupkec-hidden');
-                } else {
-                    $tabBtn.addClass('hupkec-hidden');
-                    // Si estamos en esa tab, volver a inicio
-                    if ($tabBtn.hasClass('is-active')) {
-                        $('.hupkec-tab-btn[data-tab="inicio"]').trigger('click');
-                    }
-                }
-            } else {
-                HUPToast.error('Error al actualizar el módulo');
+        // Se envían los interruptores que viven en hupkec_modules. El servidor
+        // ignora las claves que no reconoce: los módulos de un addon con opción
+        // propia los guarda el propio addon.
+        const payload = { action: 'hupkec_save_modules' };
+        $('.hupkec-module-checkbox').each(function() {
+            payload[$(this).data('module')] = $(this).is(':checked') ? 1 : 0;
+        });
+
+        Util.post(payload).done(function(res) {
+            if (!res || !res.success) {
+                $input.prop('checked', !active);
+                HUPToast.error('No se pudo actualizar el módulo');
+                return;
             }
+            HUPToast.success(active ? 'Módulo activado' : 'Módulo desactivado');
+
+            if (!tab) return;
+            const $tabBtn = $('.hupkec-tab-btn[data-tab="' + tab + '"]');
+            $tabBtn.toggleClass('hupkec-hidden', !active);
+            if (!active && $tabBtn.hasClass('is-active')) Nav.open('inicio', true);
         }).fail(function() {
+            $input.prop('checked', !active);
             HUPToast.error('Error de conexión');
         });
     });
 
     // ═══════════════════════════════════════════════════════════
-    // COMUNAS - BÚSQUEDA GLOBAL
+    // COMUNAS
     // ═══════════════════════════════════════════════════════════
     const ComunasManager = {
+        onlyChecked: false,
+
         init: function() {
-            this.setupSearch();
-            this.setupRegionToggles();
-            this.setupBulkActions();
-            this.setupSaveButton();
-            this.setupViewSelected();
-            this.setupAddSector();
-        },
+            if (!$('#hupkec-comunas-form').length) return;
+            const self = this;
 
-        setupSearch: function() {
-            const $search = $('#hupkec-comunas-search');
-            if (!$search.length) return;
+            $('#hupkec-comunas-search').on('input', Util.debounce(function() { self.filter(); }, 200));
 
-            const searchComunas = Util.debounce(function() {
-                const query = $search.val().toLowerCase().trim();
-                
-                if (!query) {
-                    $('.hupkec-comuna-item').show();
-                    $('.hupkec-region-box').show();
-                    return;
-                }
-
-                $('.hupkec-region-box').each(function() {
-                    const $box = $(this);
-                    let hasMatch = false;
-
-                    $box.find('.hupkec-comuna-item').each(function() {
-                        const $item = $(this);
-                        const text = $item.text().toLowerCase();
-                        
-                        if (text.indexOf(query) !== -1) {
-                            $item.show();
-                            hasMatch = true;
-                        } else {
-                            $item.hide();
-                        }
-                    });
-
-                    if (hasMatch) {
-                        $box.show();
-                    } else {
-                        $box.hide();
-                    }
-                });
-            }, 300);
-
-            $search.on('input', searchComunas);
-        },
-
-        setupRegionToggles: function() {
-            $('.hupkec-region-checkbox').on('change', function() {
-                const $toggle = $(this);
-                const $box = $toggle.closest('.hupkec-region-box');
-                const active = $toggle.is(':checked');
-
-                $box.find('.hupkec-comuna-item input').prop('checked', active);
-            });
-
-            // Sincronizar toggle de región con estado de comunas
-            $(document).on('change', '.hupkec-comuna-item input', function() {
+            // Marcar/desmarcar la región entera desde su casilla.
+            $(document).on('change', '.hupkec-region-checkbox', function() {
                 const $box = $(this).closest('.hupkec-region-box');
-                const total = $box.find('.hupkec-comuna-item input').length;
-                const checked = $box.find('.hupkec-comuna-item input:checked').length;
-                
-                $box.find('.hupkec-region-checkbox').prop('checked', total > 0 && checked > 0);
-            });
-        },
-
-        setupBulkActions: function() {
-            $('#hupkec-select-all-filtered').on('click', function() {
-                $('.hupkec-comuna-item:visible input').prop('checked', true);
-                $('.hupkec-region-box').each(function() {
-                    const $box = $(this);
-                    const total = $box.find('.hupkec-comuna-item input').length;
-                    const checked = $box.find('.hupkec-comuna-item input:checked').length;
-                    $box.find('.hupkec-region-checkbox').prop('checked', total > 0 && checked > 0);
-                });
+                $box.find('.hupkec-comuna-checkbox').prop('checked', $(this).is(':checked'));
+                self.sync($box);
             });
 
-            $('#hupkec-deselect-all-filtered').on('click', function() {
-                $('.hupkec-comuna-item:visible input').prop('checked', false);
-                $('.hupkec-region-box').each(function() {
-                    const $box = $(this);
-                    const total = $box.find('.hupkec-comuna-item input').length;
-                    const checked = $box.find('.hupkec-comuna-item input:checked').length;
-                    $box.find('.hupkec-region-checkbox').prop('checked', total > 0 && checked > 0);
-                });
+            $(document).on('change', '.hupkec-comuna-checkbox', function() {
+                self.sync($(this).closest('.hupkec-region-box'));
             });
 
-            $('#hupkec-invert-all').on('click', function() {
-                $('.hupkec-comuna-item:visible input').each(function() {
-                    $(this).prop('checked', !$(this).is(':checked'));
-                });
-                $('.hupkec-region-box').each(function() {
-                    const $box = $(this);
-                    const total = $box.find('.hupkec-comuna-item input').length;
-                    const checked = $box.find('.hupkec-comuna-item input:checked').length;
-                    $box.find('.hupkec-region-checkbox').prop('checked', total > 0 && checked > 0);
-                });
-            });
-
-            // Botones por región individual
-            $(document).on('click', '.hupkec-sel-all-region', function() {
-                const region = $(this).data('region');
-                const $box = $('.hupkec-region-box[data-region="' + region + '"]');
-                $box.find('.hupkec-comuna-item input').prop('checked', true);
-                $box.find('.hupkec-region-checkbox').prop('checked', true);
-            });
-
-            $(document).on('click', '.hupkec-desel-all-region', function() {
-                const region = $(this).data('region');
-                const $box = $('.hupkec-region-box[data-region="' + region + '"]');
-                $box.find('.hupkec-comuna-item input').prop('checked', false);
-                $box.find('.hupkec-region-checkbox').prop('checked', false);
-            });
-
-            $(document).on('click', '.hupkec-invert-region', function() {
-                const region = $(this).data('region');
-                const $box = $('.hupkec-region-box[data-region="' + region + '"]');
-                $box.find('.hupkec-comuna-item input').each(function() {
-                    $(this).prop('checked', !$(this).is(':checked'));
-                });
-                const total = $box.find('.hupkec-comuna-item input').length;
-                const checked = $box.find('.hupkec-comuna-item input:checked').length;
-                $box.find('.hupkec-region-checkbox').prop('checked', total > 0 && checked > 0);
-            });
-        },
-
-        setupSaveButton: function() {
-            $('#hupkec-save-comunas-btn').on('click', function() {
-                const $btn = $(this);
-                Util.setLoading($btn, true);
-
-                const data = {
-                    action: 'hupkec_save_comunas',
-                    nonce: hupkecAdmin.nonce,
-                    enabled_regions: [],
-                    enabled_comunas: {},
-                    custom_sectors: {}
-                };
-
-                $('.hupkec-region-box').each(function() {
-                    const $box = $(this);
-                    const region = $box.data('region');
-                    const $comunas = $box.find('.hupkec-comuna-item input:checked');
-                    const $regionToggle = $box.find('.hupkec-region-checkbox');
-                    
-                    // Contar sectores personalizados
-                    const sectors = [];
-                    $box.find('.hupkec-sectors-wrapper input[type="text"]').each(function() {
-                        const name = $(this).val().trim();
-                        if (name) {
-                            sectors.push({ name: name });
-                        }
-                    });
-                    data.custom_sectors[region] = sectors;
-
-                    const toggleChecked = $regionToggle.is(':checked');
-                    const hasComunas = $comunas.length > 0;
-                    const hasSectors = sectors.length > 0;
-                    const shouldEnable = toggleChecked || hasComunas || hasSectors;
-
-                    // Activar región si: toggle checked, tiene comunas, o tiene sectores
-                    if (shouldEnable) {
-                        data.enabled_regions.push(region);
-                        data.enabled_comunas[region] = [];
-                        
-                        $comunas.each(function() {
-                            data.enabled_comunas[region].push($(this).val());
-                        });
-                    }
-                });
-
-                $.post(hupkecAdmin.ajaxUrl, data, function(res) {
-                    Util.setLoading($btn, false);
-                    if (res.success) {
-                        HUPToast.success('Comunas guardadas correctamente');
-                        // active_comunas incluye los sectores personalizados; usarlo
-                        // asegura que la pestaña de Zonas los vea sin recargar la página
-                        if (res.data && res.data.active_comunas) {
-                            hupkecAdmin.activeComunas = res.data.active_comunas;
-                        }
-                    } else {
-                        HUPToast.error('Error al guardar las comunas');
-                    }
-                }).fail(function() {
-                    Util.setLoading($btn, false);
-                    HUPToast.error('Error de conexión');
-                });
-            });
-        },
-
-        setupViewSelected: function() {
-            $('#hupkec-view-selected-btn').on('click', function() {
-                const $btn = $(this);
-                const isFiltering = $btn.hasClass('active');
-                
-                if (isFiltering) {
-                    // Mostrar todas
-                    $('.hupkec-comuna-item').show();
-                    $('.hupkec-region-box').show();
-                    $btn.removeClass('active').text('👁 Ver seleccionadas');
+            // Acciones por región.
+            $(document).on('click', '.hupkec-sel-all-region, .hupkec-desel-all-region, .hupkec-invert-region', function() {
+                const $box = $(this).closest('.hupkec-region-box');
+                const $inputs = $box.find('.hupkec-comuna-checkbox');
+                if ($(this).hasClass('hupkec-invert-region')) {
+                    $inputs.each(function() { this.checked = !this.checked; });
                 } else {
-                    // Mostrar solo seleccionadas
-                    $('.hupkec-comuna-item').each(function() {
-                        const isChecked = $(this).find('input').is(':checked');
-                        $(this).toggle(isChecked);
-                    });
-                    
-                    // Ocultar regiones sin comunas seleccionadas
-                    $('.hupkec-region-box').each(function() {
-                        const hasSelected = $(this).find('.hupkec-comuna-item input:checked').length > 0;
-                        $(this).toggle(hasSelected);
-                    });
-                    
-                    $btn.addClass('active').text('👁 Ver todas');
-                    HUPToast.info('Mostrando solo comunas seleccionadas');
+                    $inputs.prop('checked', $(this).hasClass('hupkec-sel-all-region'));
                 }
+                self.sync($box);
+            });
+
+            // Acciones globales sobre lo visible (respetan la búsqueda).
+            $('#hupkec-select-all-filtered, #hupkec-deselect-all-filtered, #hupkec-invert-all').on('click', function() {
+                const id = this.id;
+                $('.hupkec-comuna-item:visible .hupkec-comuna-checkbox').each(function() {
+                    this.checked = id === 'hupkec-invert-all' ? !this.checked : id === 'hupkec-select-all-filtered';
+                });
+                $('.hupkec-region-box').each(function() { self.sync($(this)); });
+            });
+
+            $('#hupkec-view-selected-btn').on('click', function() {
+                self.onlyChecked = !self.onlyChecked;
+                $(this).attr('aria-pressed', self.onlyChecked ? 'true' : 'false')
+                    .text(self.onlyChecked ? 'Ver todas' : 'Ver marcadas');
+                self.filter();
+            });
+
+            // Un sector nuevo activa su región.
+            $(document).on('input', '.hupkec-sector-input', function() {
+                if ($(this).val().trim()) $(this).closest('.hupkec-region-box').find('.hupkec-region-checkbox').prop('checked', true);
+            });
+
+            $('#hupkec-comunas-form').on('submit', function(e) {
+                e.preventDefault();
+                self.save($('#hupkec-save-comunas-btn'));
             });
         },
 
-        setupAddSector: function() {
-            $(document).on('click', '.hupkec-add-sector', function() {
-                const $btn = $(this);
-                const $input = $btn.closest('.hupkec-sector-add-row').find('.hupkec-new-sector');
-                const name = $input.val().trim();
-                
-                if (!name) {
-                    HUPToast.error('Ingresa un nombre para el sector');
-                    return;
-                }
-                
-                // Crear elemento de sector (usar .val() para evitar XSS)
-                const $sectorInput = $('<input>').attr({type: 'text', readonly: true}).val(name);
-                const $sectorBtn = $('<button>').attr({type: 'button', 'class': 'hupkec-remove-sector'}).text('×');
-                const $sector = $('<div class="hupkec-sector-item"></div>').append($sectorInput).append($sectorBtn);
-                
-                // Agregar a la lista
-                const $wrapper = $btn.closest('.hupkec-region-box').find('.hupkec-sectors-wrapper');
-                $wrapper.append($sector);
-                
-                // Ocultar mensaje de "Sin sectores personalizados"
-                $btn.closest('.hupkec-region-footer').find('.hupkec-sectors-empty-hint').hide();
-                
-                // Marcar el checkbox de la región automáticamente
-                $btn.closest('.hupkec-region-box').find('.hupkec-region-checkbox').prop('checked', true);
-                
-                // Limpiar input
-                $input.val('');
-                HUPToast.success('Sector agregado');
+        /** Contador, casilla de región y aviso de región vacía. */
+        sync: function($box) {
+            const $inputs = $box.find('.hupkec-comuna-checkbox');
+            const checked = $inputs.filter(':checked').length;
+            const sectors = $box.find('.hupkec-sector-input').filter(function() { return $(this).val().trim() !== ''; }).length;
+            const $region = $box.find('.hupkec-region-checkbox');
+
+            $box.find('.hupkec-region-count').text(checked + '/' + $inputs.length);
+            if (checked > 0) $region.prop('checked', true);
+            if (checked === 0 && sectors === 0) $region.prop('checked', false);
+
+            const empty = $region.is(':checked') && checked === 0 && sectors === 0;
+            $box.toggleClass('is-empty', empty);
+            $box.find('.hupkec-region-warn').prop('hidden', !empty);
+        },
+
+        filter: function() {
+            const query = Util.fold($('#hupkec-comunas-search').val().trim());
+            const only = this.onlyChecked;
+
+            $('.hupkec-region-box').each(function() {
+                const $box = $(this);
+                let visible = 0;
+                $box.find('.hupkec-comuna-item').each(function() {
+                    const $item = $(this);
+                    const matchText = !query || Util.fold($item.text()).indexOf(query) !== -1;
+                    const matchChk = !only || $item.find('input').is(':checked');
+                    const show = matchText && matchChk;
+                    $item.prop('hidden', !show);
+                    if (show) visible++;
+                });
+                $box.prop('hidden', (query || only) && visible === 0);
             });
-            
-            // Eliminar sector
-            $(document).on('click', '.hupkec-remove-sector', function() {
-                const $sector = $(this).closest('.hupkec-sector-item');
-                const $footer = $sector.closest('.hupkec-region-footer');
-                $sector.remove();
-                
-                // Mostrar mensaje si no quedan sectores
-                const remainingSectors = $footer.find('.hupkec-sector-item').length;
-                if (remainingSectors === 0) {
-                    $footer.find('.hupkec-sectors-empty-hint').show();
+        },
+
+        save: function($btn) {
+            const data = {
+                action: 'hupkec_save_comunas',
+                enabled_regions: [],
+                enabled_comunas: {},
+                custom_sectors: {}
+            };
+
+            $('.hupkec-region-box').each(function() {
+                const $box = $(this);
+                const region = $box.data('region');
+                const $comunas = $box.find('.hupkec-comuna-checkbox:checked');
+
+                const sectors = [];
+                $box.find('.hupkec-sector-input').each(function() {
+                    const name = $(this).val().trim();
+                    if (name) sectors.push({ name: name });
+                });
+                data.custom_sectors[region] = sectors;
+
+                // Activar región si: casilla marcada, tiene comunas o tiene sectores.
+                if ($box.find('.hupkec-region-checkbox').is(':checked') || $comunas.length || sectors.length) {
+                    data.enabled_regions.push(region);
+                    data.enabled_comunas[region] = $comunas.map(function() { return this.value; }).get();
                 }
+            });
+
+            Util.setLoading($btn, true);
+            Util.post(data).done(function(res) {
+                if (res && res.success) {
+                    HUPToast.success('Comunas guardadas');
+                    // active_comunas incluye los sectores personalizados: así
+                    // Despacho los ve sin recargar la página.
+                    if (res.data && res.data.active_comunas) {
+                        hupkecAdmin.activeComunas = res.data.active_comunas;
+                        DiagTool.fillComunas();
+                    }
+                } else {
+                    HUPToast.error('No se pudieron guardar las comunas');
+                }
+            }).fail(function() {
+                HUPToast.error('Error de conexión');
+            }).always(function() {
+                Util.setLoading($btn, false);
             });
         }
     };
 
     // ═══════════════════════════════════════════════════════════
-    // FIELDS EDITOR - HTML5 DRAG & DROP NATIVO
+    // EDITOR DE CAMPOS (arrastre HTML5 nativo)
     // ═══════════════════════════════════════════════════════════
     const FieldsEditor = {
         currentSection: 'billing',
         draggedElement: null,
-        
+
         init: function() {
+            if (!$('#hupkec-fields-editor').length) return;
             this.setupSubtabs();
             this.render('billing');
             this.setupButtons();
@@ -459,23 +353,21 @@
 
         setupSubtabs: function() {
             const self = this;
-            $('.hupkec-fields-subtab').on('click', function() {
-                const section = $(this).data('section');
-                $('.hupkec-fields-subtab').removeClass('active');
-                $(this).addClass('active');
-                self.currentSection = section;
-                self.render(section);
+            $('.hupkec-fields-subtab').on('click', function(e) {
+                e.preventDefault();
+                $('.hupkec-fields-subtab').removeClass('is-active').attr('aria-selected', 'false');
+                $(this).addClass('is-active').attr('aria-selected', 'true');
+                self.currentSection = $(this).data('section');
+                self.render(self.currentSection);
             });
         },
 
         render: function(section) {
             const fields = hupkecAdmin.fields[section] || [];
-            const $container = $('#hupkec-fields-editor');
-            $container.empty();
+            const $container = $('#hupkec-fields-editor').empty();
 
             fields.forEach((field, index) => {
-                const $item = this.createFieldItem(field, section, index);
-                $container.append($item);
+                $container.append(this.createFieldItem(field, section, index));
             });
 
             this.setupDragAndDrop();
@@ -485,49 +377,46 @@
             const map = {
                 text: 'Texto', number: 'Número', textarea: 'Texto largo',
                 select: 'Lista', radio: 'Opción única', checkbox: 'Casilla',
-                tel: 'Teléfono', email: 'Email',
+                tel: 'Teléfono', email: 'Correo',
                 country: 'País', state: 'Región', city: 'Comuna'
             };
-            return map[type] || type || 'Texto';
+            return map[type] || (hupkecAdmin.fieldTypes || {})[type] || type || 'Texto';
         },
 
         createFieldItem: function(field, section, index) {
-            const badge = field.custom ? '<span class="hupkec-badge-hup">HUP</span>' : '';
-            const locked = field.locked ? ' (bloqueado)' : '';
-            const typeLabel = this.typeLabel(field.type);
-            const reqMark = field.required ? '<span class="hupkec-field-req">obligatorio</span>' : '';
+            const esc = Util.esc;
+            const locked = !!field.locked;
+            const meta = [esc(this.typeLabel(field.type)), '<code class="hup-tag">' + esc(field.key) + '</code>'];
+            if (field.required) meta.push('Obligatorio');
+            if (locked) meta.push('Fijo');
 
-            const $item = $(`
-                <div class="hupkec-field-item" draggable="${!field.locked}" data-section="${section}" data-index="${index}">
-                    <span class="hupkec-field-drag">${field.locked ? '🔒' : '☰'}</span>
-                    <div class="hupkec-field-info">
-                        <div class="hupkec-field-name">${field.label} ${badge}${locked}</div>
-                        <div class="hupkec-field-meta"><span class="hupkec-field-type">${typeLabel}</span> · ${field.key} ${reqMark}</div>
-                    </div>
-                    <label class="hupkec-toggle-sm">
-                        <input type="checkbox" ${field.enabled ? 'checked' : ''} ${field.locked ? 'disabled' : ''}>
-                        <span class="hupkec-ts-track"></span>
-                        <span class="hupkec-ts-thumb"></span>
-                    </label>
-                    ${!field.locked ? '<button type="button" class="hupkec-btn-micro hupkec-btn-edit-field" title="Editar">✏️</button>' : ''}
-                    ${(!field.locked && field.custom) ? '<button type="button" class="hupkec-btn-micro hupkec-btn-del-field" title="Eliminar">🗑️</button>' : ''}
-                </div>
-            `);
+            // Los campos RUT son los chilenos que trae el plugin; el resto de los
+            // personalizados los creó el comerciante.
+            let badge = '';
+            if (/_rut$/.test(field.key || '')) badge = ' <span class="hup-badge hup-badge--version">Chile</span>';
+            else if (field.custom) badge = ' <span class="hup-badge">Personalizado</span>';
 
-            // Toggle enabled
-            $item.find('.hupkec-toggle-sm input').on('change', function() {
+            const $item = $(
+                '<li class="hupkec-field-item' + (locked ? ' is-locked' : '') + (field.enabled ? '' : ' is-off') + '"' +
+                    ' draggable="' + (!locked) + '" data-index="' + index + '">' +
+                    '<span class="dashicons ' + (locked ? 'dashicons-lock' : 'dashicons-menu') + ' hup-handle" aria-hidden="true"></span>' +
+                    '<div class="hup-row__text">' +
+                        '<div class="hup-row__title">' + esc(field.label || field.key) + badge + '</div>' +
+                        '<div class="hup-row__desc">' + meta.join(' · ') + '</div>' +
+                    '</div>' +
+                    '<label class="hup-toggle"><input type="checkbox" aria-label="Mostrar ' + esc(field.label || field.key) + '"' +
+                        (field.enabled ? ' checked' : '') + (locked ? ' disabled' : '') + '><span class="hup-toggle__track"></span></label>' +
+                    (!locked ? '<button type="button" class="hup-btn hup-btn--icon hupkec-btn-edit-field" aria-label="Editar ' + esc(field.label || field.key) + '"><span class="dashicons dashicons-edit" aria-hidden="true"></span></button>' : '') +
+                    ((!locked && field.custom) ? '<button type="button" class="hup-btn hup-btn--icon hup-btn--danger-outline hupkec-btn-del-field" aria-label="Eliminar ' + esc(field.label || field.key) + '"><span class="dashicons dashicons-trash" aria-hidden="true"></span></button>' : '') +
+                '</li>'
+            );
+
+            $item.find('.hup-toggle input').on('change', function() {
                 hupkecAdmin.fields[section][index].enabled = $(this).is(':checked');
+                $item.toggleClass('is-off', !$(this).is(':checked'));
             });
-
-            // Edit button
-            $item.find('.hupkec-btn-edit-field').on('click', () => {
-                this.openModal(section, index);
-            });
-
-            // Delete button (solo campos personalizados)
-            $item.find('.hupkec-btn-del-field').on('click', () => {
-                this.deleteField(section, index);
-            });
+            $item.find('.hupkec-btn-edit-field').on('click', () => this.openModal(section, index));
+            $item.find('.hupkec-btn-del-field').on('click', () => this.deleteField(section, index));
 
             return $item;
         },
@@ -535,44 +424,34 @@
         deleteField: function(section, index) {
             const field = hupkecAdmin.fields[section][index];
             if (!field) return;
-            if (!confirm('¿Eliminar el campo "' + (field.label || field.key) + '"? Recuerda Guardar los cambios después.')) return;
+            if (!confirm('¿Eliminar el campo «' + (field.label || field.key) + '»? Recuerda guardar los campos después.')) return;
             hupkecAdmin.fields[section].splice(index, 1);
             this.render(section);
-            HUPToast.success('Campo eliminado (recuerda Guardar)');
+            HUPToast.success('Campo eliminado. Recuerda guardar.');
         },
 
         setupDragAndDrop: function() {
             const self = this;
-            const items = document.querySelectorAll('.hupkec-field-item[draggable="true"]');
-
-            items.forEach(item => {
+            document.querySelectorAll('#hupkec-fields-editor .hupkec-field-item[draggable="true"]').forEach(item => {
                 item.addEventListener('dragstart', function(e) {
                     self.draggedElement = this;
                     this.classList.add('is-dragging');
                     e.dataTransfer.effectAllowed = 'move';
                 });
-
                 item.addEventListener('dragend', function() {
                     this.classList.remove('is-dragging');
                 });
-
                 item.addEventListener('dragover', function(e) {
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'move';
-                    
-                    if (self.draggedElement !== this) {
-                        const container = this.parentNode;
-                        const draggingIndex = Array.from(container.children).indexOf(self.draggedElement);
-                        const currentIndex = Array.from(container.children).indexOf(this);
-                        
-                        if (draggingIndex < currentIndex) {
-                            this.parentNode.insertBefore(self.draggedElement, this.nextSibling);
-                        } else {
-                            this.parentNode.insertBefore(self.draggedElement, this);
-                        }
+                    if (!self.draggedElement || self.draggedElement === this) return;
+                    const siblings = Array.from(this.parentNode.children);
+                    if (siblings.indexOf(self.draggedElement) < siblings.indexOf(this)) {
+                        this.parentNode.insertBefore(self.draggedElement, this.nextSibling);
+                    } else {
+                        this.parentNode.insertBefore(self.draggedElement, this);
                     }
                 });
-
                 item.addEventListener('drop', function(e) {
                     e.preventDefault();
                     self.updateFieldsOrder();
@@ -583,12 +462,9 @@
         updateFieldsOrder: function() {
             const section = this.currentSection;
             const newOrder = [];
-            
             $('#hupkec-fields-editor .hupkec-field-item').each(function() {
-                const index = $(this).data('index');
-                newOrder.push(hupkecAdmin.fields[section][index]);
+                newOrder.push(hupkecAdmin.fields[section][$(this).data('index')]);
             });
-
             hupkecAdmin.fields[section] = newOrder;
             this.render(section);
         },
@@ -599,46 +475,31 @@
             $('#hupkec-save-fields').on('click', function() {
                 const $btn = $(this);
                 Util.setLoading($btn, true);
-
-                $.post(hupkecAdmin.ajaxUrl, {
-                    action: 'hupkec_save_fields',
-                    nonce: hupkecAdmin.nonce,
-                    fields: JSON.stringify(hupkecAdmin.fields)
-                }, function(res) {
-                    Util.setLoading($btn, false);
-                    if (res.success) {
-                        HUPToast.success('Campos guardados correctamente');
-                    } else {
-                        HUPToast.error('Error al guardar los campos');
-                    }
-                }).fail(function() {
-                    Util.setLoading($btn, false);
-                    HUPToast.error('Error de conexión');
-                });
+                Util.post({ action: 'hupkec_save_fields', fields: JSON.stringify(hupkecAdmin.fields) })
+                    .done(function(res) {
+                        if (res && res.success) HUPToast.success('Campos guardados');
+                        else HUPToast.error('No se pudieron guardar los campos');
+                    })
+                    .fail(function() { HUPToast.error('Error de conexión'); })
+                    .always(function() { Util.setLoading($btn, false); });
             });
 
             $('#hupkec-reset-fields').on('click', function() {
-                if (!confirm('¿Estás seguro de restaurar los campos por defecto? Se perderán los cambios no guardados.')) return;
-
+                if (!confirm('¿Restaurar los campos originales? Se pierden el orden, los cambios y los campos personalizados.')) return;
                 const $btn = $(this);
                 Util.setLoading($btn, true);
-
-                $.post(hupkecAdmin.ajaxUrl, {
-                    action: 'hupkec_reset_fields',
-                    nonce: hupkecAdmin.nonce
-                }, function(res) {
-                    Util.setLoading($btn, false);
-                    if (res.success && res.data) {
-                        hupkecAdmin.fields = res.data;
-                        self.render(self.currentSection);
-                        HUPToast.success('Campos restaurados por defecto');
-                    } else {
-                        HUPToast.error('Error al restaurar los campos');
-                    }
-                }).fail(function() {
-                    Util.setLoading($btn, false);
-                    HUPToast.error('Error de conexión');
-                });
+                Util.post({ action: 'hupkec_reset_fields' })
+                    .done(function(res) {
+                        if (res && res.success && res.data) {
+                            hupkecAdmin.fields = res.data;
+                            self.render(self.currentSection);
+                            HUPToast.success('Campos restaurados');
+                        } else {
+                            HUPToast.error('No se pudieron restaurar los campos');
+                        }
+                    })
+                    .fail(function() { HUPToast.error('Error de conexión'); })
+                    .always(function() { Util.setLoading($btn, false); });
             });
 
             $('#hupkec-add-field').on('click', function() {
@@ -649,33 +510,23 @@
         setupModal: function() {
             const self = this;
 
-            $('#hupkec-close-field-modal, #hupkec-cancel-field').on('click', function() {
-                $('#hupkec-field-modal').hide();
-            });
+            $('#hupkec-save-field').on('click', function() { self.saveField(); });
 
-            $('#hupkec-save-field').on('click', function() {
-                self.saveField();
-            });
-
+            // Los grupos se muestran con .toggle() (style.display) y no con
+            // [hidden]: el addon Pro los muestra igual al añadir sus tipos.
             $('#hf-type').on('change', function() {
                 const type = $(this).val();
-                const hasOptions = (type === 'select' || type === 'radio');
-                const noPlaceholder = (type === 'radio' || type === 'checkbox');
-                $('#hf-options-group').toggle(hasOptions);
-                $('#hf-placeholder-group').toggle(!noPlaceholder);
+                $('#hf-options-group').toggle(type === 'select' || type === 'radio');
+                $('#hf-placeholder-group').toggle(type !== 'radio' && type !== 'checkbox');
                 $('#hf-default-group').toggle(type !== 'checkbox');
             });
         },
 
         openModal: function(section, index) {
             const isNew = index === -1;
-            const field = isNew ? {
-                type: 'text',
-                label: '',
-                placeholder: '',
-                width: 'wide',
-                required: false
-            } : hupkecAdmin.fields[section][index];
+            const field = isNew
+                ? { type: 'text', label: '', placeholder: '', width: 'wide', required: false }
+                : hupkecAdmin.fields[section][index];
 
             const optsText = Array.isArray(field.options)
                 ? field.options.map(o => o.value + '|' + o.label).join('\n')
@@ -689,34 +540,35 @@
             $('#hf-default').val(field.default || '');
             $('#hf-cssclass').val(field.cssclass || '');
             $('#hf-options').val(optsText);
-            $('#hf-width').val(field.width);
-            $('#hf-required').prop('checked', field.required);
+            $('input[name="hf-width"]').filter('[value="' + (field.width || 'wide') + '"]').prop('checked', true);
+            $('#hf-required').prop('checked', !!field.required);
 
             // Ausente = visible, igual que en PHP (hupkec_field_shows_in)
             $('#hf-show-email').prop('checked', field.show_in_email !== false);
             $('#hf-show-order').prop('checked', field.show_in_order !== false);
-            // Solo los campos personalizados se renderizan en emails/pedido
+            // Solo los campos personalizados se muestran en correos y pedido
             $('#hf-visibility-group').toggle(isNew || !!field.custom);
 
             $('#hf-type-group').toggle(isNew);
             // Setear el tipo al final dispara el change que ajusta la visibilidad
             $('#hf-type').val(field.type).trigger('change');
 
-            // El modal ya está poblado con los datos del campo. Aquí un addon
-            // rellena sus propios controles dentro de #hupkec-field-modal-extra.
+            // El modal ya está poblado. Aquí un addon rellena sus propios controles
+            // dentro de #hupkec-field-modal-extra.
             Hooks.doAction('hupkec.fieldModal.opened', field, isNew, section);
 
-            $('#hupkec-field-modal').show();
+            $('#hupkec-field-modal').prop('hidden', false);
+            $('#hf-label').trigger('focus');
         },
 
         saveField: function() {
             const section = $('#hf-section').val();
-            const index = parseInt($('#hf-index').val());
+            const index = parseInt($('#hf-index').val(), 10);
             const isNew = index === -1;
             const existing = isNew ? null : hupkecAdmin.fields[section][index];
             const type = $('#hf-type').val();
 
-            // Parsear opciones "valor|Etiqueta" (una por línea) para select/radio
+            // Opciones "valor|Etiqueta" (una por línea) para select/radio
             const options = [];
             if (type === 'select' || type === 'radio') {
                 $('#hf-options').val().split('\n').forEach(line => {
@@ -737,7 +589,7 @@
                 default: $('#hf-default').val().trim(),
                 cssclass: $('#hf-cssclass').val().trim(),
                 options: options,
-                width: $('#hf-width').val(),
+                width: $('input[name="hf-width"]:checked').val() || 'wide',
                 required: $('#hf-required').is(':checked'),
                 show_in_email: $('#hf-show-email').is(':checked'),
                 show_in_order: $('#hf-show-order').is(':checked'),
@@ -754,8 +606,10 @@
 
             if (!field.label) {
                 HUPToast.error('El campo necesita una etiqueta');
+                $('#hf-label').addClass('hup-input--error').trigger('focus');
                 return;
             }
+            $('#hf-label').removeClass('hup-input--error');
             if ((type === 'select' || type === 'radio') && options.length === 0) {
                 HUPToast.error('Este tipo de campo necesita al menos una opción');
                 return;
@@ -771,32 +625,32 @@
             if (isNew) {
                 hupkecAdmin.fields[section].push(field);
             } else {
-                hupkecAdmin.fields[section][index] = { ...existing, ...field };
+                hupkecAdmin.fields[section][index] = $.extend({}, existing, field);
             }
 
             this.render(section);
-            $('#hupkec-field-modal').hide();
-            HUPToast.success(isNew ? 'Campo agregado' : 'Campo actualizado');
+            $('#hupkec-field-modal').prop('hidden', true);
+            HUPToast.success(isNew ? 'Campo agregado. Recuerda guardar.' : 'Campo actualizado. Recuerda guardar.');
         },
 
         setupBillingModule: function() {
             $('#hupkec-billing-module-toggle').on('change', function() {
-                const active = $(this).is(':checked');
-
-                $.post(hupkecAdmin.ajaxUrl, {
-                    action: 'hupkec_save_billing_module',
-                    nonce: hupkecAdmin.nonce,
-                    active: active ? 1 : 0
-                }, function(res) {
-                    if (res.success) {
-                        $('#hupkec-billing-module-preview').toggleClass('hupkec-hidden', !active);
-                        HUPToast.success('Módulo de facturación ' + (active ? 'activado' : 'desactivado'));
-                    } else {
-                        HUPToast.error('Error al actualizar el módulo');
-                    }
-                }).fail(function() {
-                    HUPToast.error('Error de conexión');
-                });
+                const $input = $(this);
+                const active = $input.is(':checked');
+                Util.post({ action: 'hupkec_save_billing_module', active: active ? 1 : 0 })
+                    .done(function(res) {
+                        if (res && res.success) {
+                            $('#hupkec-billing-module-preview').prop('hidden', !active);
+                            HUPToast.success('Facturación para empresas ' + (active ? 'activada' : 'desactivada'));
+                        } else {
+                            $input.prop('checked', !active);
+                            HUPToast.error('No se pudo actualizar el módulo');
+                        }
+                    })
+                    .fail(function() {
+                        $input.prop('checked', !active);
+                        HUPToast.error('Error de conexión');
+                    });
             });
         }
     };
@@ -807,265 +661,259 @@
     const ZonasManager = {
         zones: [],
         currentZone: null,
-        
+
         init: function() {
+            if (!$('#hupkec-zones-list').length) return;
             this.zones = Array.isArray(hupkecAdmin.zones) ? hupkecAdmin.zones : [];
             this.render();
             this.setupButtons();
             this.setupForm();
         },
-        
+
         refreshZones: function() {
-            const self = this;
-            $.post(hupkecAdmin.ajaxUrl, {
-                action: 'hupkec_get_zones',
-                nonce: hupkecAdmin.nonce
-            }, function(res) {
-                if (res.success && res.data) {
-                    self.zones = res.data;
-                    self.render();
+            Util.post({ action: 'hupkec_get_zones' }).done((res) => {
+                if (res && res.success && res.data) {
+                    this.zones = res.data;
+                    hupkecAdmin.zones = res.data;
+                    this.render();
                 }
             });
         },
-        
-        render: function() {
-            const $list = $('#hupkec-zones-list');
-            $list.empty();
-            
-            if (!this.zones || this.zones.length === 0) {
-                $list.html('<div class="hupkec-empty-state">No hay zonas de despacho creadas. Crea tu primera zona para empezar.</div>');
-                return;
-            }
-            
-            this.zones.forEach((zone, index) => {
-                const $card = this.createZoneCard(zone, index);
-                $list.append($card);
-            });
-        },
-        
-        createZoneCard: function(zone, index) {
-            const comunasText = zone.comunas && zone.comunas.length > 0 
-                ? zone.comunas.join(', ') 
-                : 'Sin comunas';
-            
-            const costText = this.getCostText(zone);
 
-            const $card = $('<div class="hupkec-zone-card"></div>');
-            $card.css('border-left', '4px solid ' + (zone.color || '#378ADD'));
-            const $header = $('<div class="hupkec-zone-card-header"></div>').appendTo($card);
-            $('<h4></h4>').text(zone.name || '').appendTo($header);
-            const $actions = $('<div class="hupkec-zone-card-actions"></div>').appendTo($header);
-            $('<button class="hupkec-btn-micro hupkec-edit-zone" type="button">✏️ Editar</button>').attr('data-index', index).appendTo($actions);
-            $('<button class="hupkec-btn-micro hupkec-delete-zone" type="button">🗑️ Eliminar</button>').attr('data-index', index).appendTo($actions);
-            const $body = $('<div class="hupkec-zone-card-body"></div>').appendTo($card);
-            $('<div></div>').append($('<strong>Costo:</strong>')).append(document.createTextNode(' ' + costText)).appendTo($body);
-            $('<div></div>')
-                .append($('<strong></strong>').text('Comunas (' + (zone.comunas ? zone.comunas.length : 0) + '):'))
-                .append(document.createTextNode(' ' + comunasText))
-                .appendTo($body);
-            return $card;
-        },
-        
-        getCostText: function(zone) {
-            if (!zone.cost_type) return 'No configurado';
-
-            switch(zone.cost_type) {
-                case 'free': return 'Gratis';
-                case 'fixed':
-                    var txt = '$' + (zone.cost_value || 0);
-                    if (zone.cost_free_from && parseFloat(zone.cost_free_from) > 0) {
-                        txt += ' (gratis desde $' + zone.cost_free_from + ')';
-                    }
-                    return txt;
-                case 'cod': return 'Por pagar (contra reembolso)';
-                default:
-                    // Tipo registrado por un addon: rotular con su etiqueta del
-                    // desplegable en vez de "No configurado". El costo real lo
-                    // calcula el addon en el checkout con hupkec_zone_cost.
-                    var costTypes = (typeof hupkecAdmin !== 'undefined' && hupkecAdmin.costTypes) || {};
-                    return costTypes[zone.cost_type] || 'No configurado';
-            }
-        },
-        
-        setupButtons: function() {
-            const self = this;
-            
-            // Botón nueva zona
-            $('#hupkec-new-zone-btn').on('click', function() {
-                self.openForm(null);
-            });
-            
-            // Botón recrear zona
-            $('#hupkec-recreate-zone-btn').on('click', function() {
-                const $btn = $(this);
-                Util.setLoading($btn, true);
-                
-                $.post(hupkecAdmin.ajaxUrl, {
-                    action: 'hupkec_recreate_zone',
-                    nonce: hupkecAdmin.nonce
-                }, function(res) {
-                    Util.setLoading($btn, false);
-                    const $msg = $('#hupkec-recreate-msg');
-                    
-                    if (res.success) {
-                        $msg.removeClass('hupkec-msg-error').addClass('hupkec-msg-ok');
-                        $msg.text((res.data && res.data.msg) ? res.data.msg : 'Zona verificada correctamente');
-                    } else {
-                        $msg.removeClass('hupkec-msg-ok').addClass('hupkec-msg-error');
-                        $msg.text(res.data || 'Error al verificar la zona');
-                    }
-                    
-                    $msg.fadeIn();
-                    setTimeout(() => $msg.fadeOut(), 5000);
+        /** Regiones que toca una zona, a partir de las comunas activas. */
+        regionsOf: function(zone) {
+            const active = hupkecAdmin.activeComunas || {};
+            const set = {};
+            (zone.comunas || []).forEach(function(c) {
+                Object.keys(active).forEach(function(code) {
+                    if ((active[code] || []).indexOf(c) !== -1) set[code] = true;
                 });
             });
-            
-            // Editar zona (delegado)
-            $('#hupkec-zones-list').on('click', '.hupkec-edit-zone', function() {
-                const index = $(this).data('index');
-                self.openForm(index);
+            return Object.keys(set).length;
+        },
+
+        render: function() {
+            const $list = $('#hupkec-zones-list').empty();
+            const esc = Util.esc;
+
+            if (!this.zones || this.zones.length === 0) {
+                $list.html(
+                    '<div class="hup-empty">' +
+                        '<div class="hup-empty__icon"><span class="dashicons dashicons-car" aria-hidden="true"></span></div>' +
+                        '<div class="hup-empty__title">Todavía no hay zonas de despacho</div>' +
+                        '<p>Sin zonas, el checkout no ofrece envío. Crea la primera y asígnale comunas y un costo.</p>' +
+                        '<button type="button" class="hup-btn hupkec-new-zone"><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span>Crear zona</button>' +
+                    '</div>'
+                );
+                return;
+            }
+
+            let rows = '';
+            this.zones.forEach((zone, index) => {
+                const n = zone.comunas ? zone.comunas.length : 0;
+                const r = this.regionsOf(zone);
+                const color = /^#[0-9a-f]{3,8}$/i.test(zone.color || '') ? zone.color : '#378ADD';
+                rows +=
+                    '<tr>' +
+                        '<td><span class="hup-inline"><span class="hup-dot" style="--hup-dot:' + color + '"></span><strong>' + esc(zone.name) + '</strong></span></td>' +
+                        '<td>' + this.costBadge(zone) + '</td>' +
+                        '<td>' + n + ' comuna' + (n === 1 ? '' : 's') + (r ? ' · ' + r + ' región' + (r === 1 ? '' : 'es') : '') + '</td>' +
+                        '<td class="is-num"><span class="hup-inline">' +
+                            '<button type="button" class="hup-btn hup-btn--icon hupkec-edit-zone" data-index="' + index + '" aria-label="Editar ' + esc(zone.name) + '"><span class="dashicons dashicons-edit" aria-hidden="true"></span></button>' +
+                            '<button type="button" class="hup-btn hup-btn--icon hup-btn--danger-outline hupkec-delete-zone" data-index="' + index + '" aria-label="Eliminar ' + esc(zone.name) + '"><span class="dashicons dashicons-trash" aria-hidden="true"></span></button>' +
+                        '</span></td>' +
+                    '</tr>';
             });
-            
-            // Eliminar zona (delegado)
+
+            $list.html(
+                '<table class="hup-table">' +
+                    '<thead><tr><th scope="col">Zona</th><th scope="col">Costo</th><th scope="col">Cobertura</th><th scope="col" class="is-num"><span class="screen-reader-text">Acciones</span></th></tr></thead>' +
+                    '<tbody>' + rows + '</tbody>' +
+                '</table>'
+            );
+        },
+
+        costBadge: function(zone) {
+            const esc = Util.esc;
+            switch (zone.cost_type) {
+                case 'free':
+                    return '<span class="hup-badge hup-badge--success">Gratis</span>';
+                case 'fixed': {
+                    let txt = '<span class="hup-badge">' + Util.money(zone.cost_value) + '</span>';
+                    if (parseFloat(zone.cost_free_from) > 0) {
+                        txt += ' <span class="hup-hint">gratis desde ' + Util.money(zone.cost_free_from) + '</span>';
+                    }
+                    return txt;
+                }
+                case 'cod':
+                    return '<span class="hup-badge hup-badge--warning">Por pagar</span>';
+                default: {
+                    // Tipo registrado por un addon: rotular con su etiqueta del
+                    // desplegable. El costo real lo calcula el addon con hupkec_zone_cost.
+                    const types = hupkecAdmin.costTypes || {};
+                    return '<span class="hup-badge">' + esc(types[zone.cost_type] || 'Sin configurar') + '</span>';
+                }
+            }
+        },
+
+        setupButtons: function() {
+            const self = this;
+
+            $(document).on('click', '#hupkec-new-zone-btn, .hupkec-new-zone', function() {
+                self.openForm(null);
+            });
+
+            $('#hupkec-recreate-zone-btn').on('click', function() {
+                const $btn = $(this);
+                const $msg = $('#hupkec-recreate-msg');
+                Util.setLoading($btn, true);
+                Util.post({ action: 'hupkec_recreate_zone' }).done(function(res) {
+                    const ok = res && res.success;
+                    $msg.toggleClass('hup-notice--success', ok).toggleClass('hup-notice--error', !ok);
+                    $msg.find('.dashicons').attr('class', 'dashicons ' + (ok ? 'dashicons-yes-alt' : 'dashicons-dismiss'));
+                    $msg.find('p').text(ok ? ((res.data && res.data.msg) || 'Zona verificada.') : ((res && res.data) || 'No se pudo verificar la zona.'));
+                    $msg.prop('hidden', false);
+                    if (ok) {
+                        $('#hupkec-wc-zone-badge').attr('class', 'hup-badge hup-badge--success hup-badge--dot').text('Activa');
+                    }
+                }).fail(function() {
+                    HUPToast.error('Error de conexión');
+                }).always(function() {
+                    Util.setLoading($btn, false);
+                });
+            });
+
+            $('#hupkec-zones-list').on('click', '.hupkec-edit-zone', function() {
+                self.openForm($(this).data('index'));
+            });
+
             $('#hupkec-zones-list').on('click', '.hupkec-delete-zone', function() {
-                if (!confirm('¿Eliminar esta zona de despacho?')) return;
-                
-                const index = $(this).data('index');
-                const zone = self.zones[index];
-                
-                $.post(hupkecAdmin.ajaxUrl, {
-                    action: 'hupkec_delete_zone',
-                    nonce: hupkecAdmin.nonce,
-                    zone_id: zone.id
-                }, function(res) {
-                    if (res.success) {
+                const zone = self.zones[$(this).data('index')];
+                if (!zone || !confirm('¿Eliminar la zona «' + zone.name + '»? Sus comunas quedarán sin despacho.')) return;
+
+                Util.post({ action: 'hupkec_delete_zone', zone_id: zone.id }).done(function(res) {
+                    if (res && res.success) {
                         HUPToast.success('Zona eliminada');
                         self.refreshZones();
                     } else {
-                        HUPToast.error('Error al eliminar la zona');
+                        HUPToast.error('No se pudo eliminar la zona');
                     }
-                });
+                }).fail(function() { HUPToast.error('Error de conexión'); });
             });
         },
-        
+
         setupForm: function() {
             const self = this;
-            
-            // Cancelar
-            $('#hupkec-cancel-zone, #hupkec-cancel-zone-2').on('click', function() {
-                $('#hupkec-zone-form').hide();
-                self.currentZone = null;
-            });
-            
-            // Cambio de tipo de costo
+
+            $('#hupkec-cancel-zone').on('click', function() { self.currentZone = null; });
+
+            // Filas de monto con .toggle() (style.display): el addon Pro las
+            // muestra igual para sus propios tipos de costo.
             $('#hz-cost-type').on('change', function() {
                 const type = $(this).val();
                 $('#hz-cost-value-row').toggle(type === 'fixed');
                 $('#hz-free-from-row').toggle(type === 'fixed');
             });
-            
-            // Guardar zona
-            $('#hupkec-save-zone').on('click', function() {
-                self.saveZone();
-            });
-            
-            // Búsqueda de comunas en formulario
+
+            $('#hupkec-save-zone').on('click', function() { self.saveZone(); });
+
             $('#hz-comunas-search').on('input', Util.debounce(function() {
-                const query = $(this).val().toLowerCase();
-                $('.hz-comuna-chk').each(function() {
-                    const text = $(this).text().toLowerCase();
-                    $(this).toggle(text.indexOf(query) !== -1);
+                const query = Util.fold($(this).val().trim());
+                $('#hz-comunas-selector .hz-region-group').each(function() {
+                    let visible = 0;
+                    $(this).find('.hz-comuna-chk').each(function() {
+                        const show = !query || Util.fold($(this).text()).indexOf(query) !== -1;
+                        $(this).prop('hidden', !show);
+                        if (show) visible++;
+                    });
+                    $(this).prop('hidden', visible === 0);
                 });
             }, 200));
-            
-            // Seleccionar/deseleccionar por región
-            $(document).on('click', '.hz-sel-region', function() {
-                const region = $(this).data('region');
-                $('.hz-region-group[data-region-code="' + region + '"] .hz-comuna-input').prop('checked', true).trigger('change');
-            });
-            $(document).on('click', '.hz-desel-region', function() {
-                const region = $(this).data('region');
-                $('.hz-region-group[data-region-code="' + region + '"] .hz-comuna-input').prop('checked', false).trigger('change');
+
+            $(document).on('click', '.hz-sel-region, .hz-desel-region', function() {
+                $(this).closest('.hz-region-group').find('.hz-comuna-input')
+                    .prop('checked', $(this).hasClass('hz-sel-region'));
+                self.updateSelectedCount();
             });
 
-            // Invertir selección en zona
-            $(document).on('click', '#hz-invert-zone', function() {
-                $('.hz-comuna-input').each(function() {
-                    $(this).prop('checked', !$(this).is(':checked')).trigger('change');
+            $('#hz-sel-all, #hz-desel-all, #hz-invert-zone').on('click', function() {
+                const id = this.id;
+                $('#hz-comunas-selector .hz-comuna-chk:not([hidden]) .hz-comuna-input').each(function() {
+                    this.checked = id === 'hz-invert-zone' ? !this.checked : id === 'hz-sel-all';
                 });
+                self.updateSelectedCount();
             });
 
-            // Seleccionar todas las comunas
-            $(document).on('click', '#hz-sel-all', function() {
-                $('.hz-comuna-input').prop('checked', true).trigger('change');
-            });
-
-            // Deseleccionar todas las comunas
-            $(document).on('click', '#hz-desel-all', function() {
-                $('.hz-comuna-input').prop('checked', false).trigger('change');
-            });
+            $(document).on('change', '.hz-comuna-input', function() { self.updateSelectedCount(); });
         },
-        
+
+        /**
+         * Comunas que ya están en OTRA zona: una comuna solo puede pertenecer a
+         * una, y si se repite gana la última guardada, así que se avisa.
+         */
+        takenBy: function() {
+            const map = {};
+            const current = this.currentZone ? this.currentZone.id : null;
+            this.zones.forEach(function(z) {
+                if (z.id === current) return;
+                (z.comunas || []).forEach(function(c) { map[c] = z.name; });
+            });
+            return map;
+        },
+
         buildComunasSelector: function() {
-            const $selector = $('#hz-comunas-selector');
-            $selector.empty();
-
-            const activeComunas = hupkecAdmin.activeComunas || {};
+            const $selector = $('#hz-comunas-selector').empty();
+            const active = hupkecAdmin.activeComunas || {};
             const regions = hupkecAdmin.regions || {};
+            const taken = this.takenBy();
+            const esc = Util.esc;
+            let html = '';
 
-            let hasAny = false;
             Object.keys(regions).forEach(function(code) {
-                const rc = activeComunas[code];
-                if (!rc || !rc.length) return;
-                hasAny = true;
-
-                const $group = $('<div class="hz-region-group"></div>').attr('data-region-code', code);
-                const $label = $('<div class="hz-region-label"></div>').text(regions[code]);
-                const $actions = $('<div class="hz-region-actions"></div>');
-                $('<button type="button" class="hupkec-btn-micro hz-sel-region">Sel. todas</button>').attr('data-region', code).appendTo($actions);
-                $('<button type="button" class="hupkec-btn-micro hz-desel-region">Desel. todas</button>').attr('data-region', code).appendTo($actions);
-                $label.append($actions);
-                $group.append($label);
-
-                const $comunasDiv = $('<div class="hz-region-comunas"></div>');
-                rc.forEach(function(c) {
-                    const $chk = $('<label class="hz-comuna-chk"></label>').attr('data-comuna', c.toLowerCase());
-                    $('<input type="checkbox" class="hz-comuna-input">').attr('value', c).appendTo($chk);
-                    $chk.append(document.createTextNode(c));
-                    $comunasDiv.append($chk);
-                });
-                $group.append($comunasDiv);
-                $selector.append($group);
+                const list = active[code];
+                if (!list || !list.length) return;
+                html +=
+                    '<div class="hup-checkgroup hz-region-group" data-region-code="' + esc(code) + '">' +
+                        '<div class="hup-checkgroup__head">' + esc(regions[code]) +
+                            '<div class="hup-checkgroup__actions">' +
+                                '<button type="button" class="hup-btn hup-btn--ghost hup-btn--sm hz-sel-region">Todas</button>' +
+                                '<button type="button" class="hup-btn hup-btn--ghost hup-btn--sm hz-desel-region">Ninguna</button>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="hup-checkgroup__body hup-checkgroup__body--scroll">' +
+                            list.map(function(c) {
+                                const other = taken[c] ? ' <span class="hup-hint">(en ' + esc(taken[c]) + ')</span>' : '';
+                                return '<label class="hup-check hz-comuna-chk"><input type="checkbox" class="hz-comuna-input" value="' + esc(c) + '"> ' + esc(c) + other + '</label>';
+                            }).join('') +
+                        '</div>' +
+                    '</div>';
             });
 
-            if (!hasAny) {
-                $selector.html('<p style="color:#666;font-size:12px;padding:8px 0">No hay comunas activas. Ve a la pestaña <strong>Comunas</strong> y guarda tu selección.</p>');
+            if (!html) {
+                html = '<div class="hup-notice hup-notice--warning"><span class="dashicons dashicons-warning" aria-hidden="true"></span><p>No hay comunas activas. Ve a <strong>Comunas</strong> y guarda tu selección.</p></div>';
             }
+            $selector.html(html);
         },
 
         openForm: function(index) {
             const isNew = index === null;
             this.currentZone = isNew ? null : this.zones[index];
 
-            // Regenerar selector de comunas con datos actuales en memoria
             this.buildComunasSelector();
-            
-            // Limpiar campos del formulario (no es un <form>, es un div)
-            $('#hz-name').val('');
+            $('#hz-comunas-search').val('');
+
+            $('#hz-name').val('').removeClass('hup-input--error');
             $('#hz-color').val('#378ADD');
             $('#hz-cost-type').val('free').trigger('change');
             $('#hz-cost-value').val('');
             $('#hz-free-from').val('');
-            $('#hz-cost-value-row, #hz-free-from-row').hide();
-            $('.hz-comuna-input').prop('checked', false);
-            
+
             if (isNew) {
                 $('#hupkec-zone-form-title').text('Nueva zona de despacho');
                 $('#hupkec-zone-id').val('');
             } else {
-                $('#hupkec-zone-form-title').text('Editar zona de despacho');
                 const zone = this.currentZone;
-                
+                $('#hupkec-zone-form-title').text('Editar zona de despacho');
                 $('#hupkec-zone-id').val(zone.id || '');
                 $('#hz-name').val(zone.name || '');
                 $('#hz-color').val(zone.color || '#378ADD');
@@ -1073,41 +921,37 @@
                 $('#hz-cost-value').val(zone.cost_value || '');
                 $('#hz-free-from').val(zone.cost_free_from || '');
 
-                // Marcar comunas seleccionadas
-                if (zone.comunas && zone.comunas.length > 0) {
-                    zone.comunas.forEach(comuna => {
-                        $(`.hz-comuna-input[value="${comuna}"]`).prop('checked', true);
-                    });
-                }
-                
-                this.updateSelectedCount();
+                // Por valor y no con un selector [value="…"]: una comuna con
+                // comilla (O'Higgins) rompía el selector y quedaba sin marcar.
+                const chosen = {};
+                (zone.comunas || []).forEach(function(c) { chosen[c] = true; });
+                $('.hz-comuna-input').each(function() { this.checked = !!chosen[this.value]; });
             }
+            this.updateSelectedCount();
 
             // El formulario ya está poblado. Aquí un addon rellena sus controles
             // dentro de #hupkec-zone-form-extra. En zona nueva, currentZone es null.
             Hooks.doAction('hupkec.zoneForm.opened', this.currentZone, isNew);
 
-            $('#hupkec-zone-form').fadeIn();
+            $('#hupkec-zone-modal').prop('hidden', false);
+            $('#hz-name').trigger('focus');
         },
-        
+
         saveZone: function() {
             const name = $('#hz-name').val().trim();
-            
             if (!name) {
-                HUPToast.error('El nombre de la zona es obligatorio');
+                $('#hz-name').addClass('hup-input--error').trigger('focus');
+                HUPToast.error('La zona necesita un nombre');
                 return;
             }
-            
-            const selectedComunas = [];
-            $('.hz-comuna-input:checked').each(function() {
-                selectedComunas.push($(this).val());
-            });
-            
+            $('#hz-name').removeClass('hup-input--error');
+
+            const selectedComunas = $('.hz-comuna-input:checked').map(function() { return this.value; }).get();
             if (selectedComunas.length === 0) {
-                HUPToast.error('Debes seleccionar al menos una comuna');
+                HUPToast.error('Elige al menos una comuna');
                 return;
             }
-            
+
             let data = {
                 action: 'hupkec_save_zone',
                 nonce: hupkecAdmin.nonce,
@@ -1138,42 +982,110 @@
 
             const $btn = $('#hupkec-save-zone');
             Util.setLoading($btn, true);
-            
-            $.post(hupkecAdmin.ajaxUrl, data, (res) => {
-                Util.setLoading($btn, false);
-                if (res.success) {
-                    HUPToast.success('Zona guardada correctamente');
-                    $('#hupkec-zone-form').hide();
+            $.post(hupkecAdmin.ajaxUrl, data).done((res) => {
+                if (res && res.success) {
+                    HUPToast.success('Zona guardada');
+                    $('#hupkec-zone-modal').prop('hidden', true);
+                    this.currentZone = null;
                     this.refreshZones();
                 } else {
-                    HUPToast.error(res.data || 'Error al guardar la zona');
+                    HUPToast.error((res && res.data) || 'No se pudo guardar la zona');
                 }
             }).fail(() => {
-                Util.setLoading($btn, false);
                 HUPToast.error('Error de conexión');
+            }).always(() => {
+                Util.setLoading($btn, false);
             });
         },
-        
+
         updateSelectedCount: function() {
-            const count = $('.hz-comuna-input:checked').length;
-            $('#hz-selected-count').text(count);
+            $('#hz-selected-count').text($('.hz-comuna-input:checked').length);
         }
     };
 
-    // Actualizar contador al seleccionar comunas
-    $(document).on('change', '.hz-comuna-input', function() {
-        ZonasManager.updateSelectedCount();
-    });
+    // ═══════════════════════════════════════════════════════════
+    // PROBAR UNA COMUNA (diagnóstico de envío)
+    // ═══════════════════════════════════════════════════════════
+    const DiagTool = {
+        init: function() {
+            if (!$('#hupkec-test-comuna').length) return;
+            this.fillComunas();
+            $('#hupkec-test-btn').on('click', () => this.run($('#hupkec-test-btn')));
+        },
+
+        fillComunas: function() {
+            const $sel = $('#hupkec-test-comuna');
+            if (!$sel.length) return;
+            const prev = $sel.val();
+            const active = hupkecAdmin.activeComunas || {};
+            const regions = hupkecAdmin.regions || {};
+            $sel.empty().append($('<option>').val('').text('Elige una comuna…'));
+            Object.keys(regions).forEach(function(code) {
+                const list = active[code];
+                if (!list || !list.length) return;
+                const $group = $('<optgroup>').attr('label', regions[code]);
+                list.forEach(function(c) { $group.append($('<option>').val(c).text(c)); });
+                $sel.append($group);
+            });
+            if (prev) $sel.val(prev);
+        },
+
+        run: function($btn) {
+            const comuna = $('#hupkec-test-comuna').val();
+            if (!comuna) {
+                HUPToast.error('Elige una comuna para probar');
+                return;
+            }
+            const esc = Util.esc;
+            const $out = $('#hupkec-test-result');
+            Util.setLoading($btn, true);
+
+            Util.post({ action: 'hupkec_test_comuna', comuna: comuna, subtotal: $('#hupkec-test-subtotal').val() || 0 })
+                .done(function(res) {
+                    if (!res || !res.success) {
+                        HUPToast.error((res && res.data) || 'No se pudo probar la comuna');
+                        return;
+                    }
+                    const checks = res.data.checks || [];
+                    const allOk = checks.every(function(c) { return c.ok; });
+                    let html = '';
+
+                    if (res.data.result && allOk) {
+                        html += '<div class="hup-notice hup-notice--success"><span class="dashicons dashicons-yes-alt" aria-hidden="true"></span><p>' +
+                            'El cliente de <strong>' + esc(comuna) + '</strong> verá «' + esc(res.data.result.zone) + '»: <strong>' + esc(res.data.result.cost) + '</strong>.</p></div>';
+                    } else {
+                        html += '<div class="hup-notice hup-notice--error"><span class="dashicons dashicons-dismiss" aria-hidden="true"></span><p>' +
+                            'El cliente de <strong>' + esc(comuna) + '</strong> no verá opciones de envío. Revisa lo marcado en rojo.</p></div>';
+                    }
+
+                    html += '<ul class="hup-checklist">' + checks.map(function(c) {
+                        return '<li class="' + (c.ok ? 'is-ok' : 'is-fail') + '"><span>' + esc(c.label) +
+                            (c.detail ? '<small>' + esc(c.detail) + '</small>' : '') + '</span></li>';
+                    }).join('') + '</ul>';
+
+                    $out.html(html).prop('hidden', false);
+                })
+                .fail(function() { HUPToast.error('Error de conexión'); })
+                .always(function() { Util.setLoading($btn, false); });
+        }
+    };
 
     // ═══════════════════════════════════════════════════════════
     // INICIALIZACIÓN
     // ═══════════════════════════════════════════════════════════
-    $(document).ready(function() {
+    $(function() {
         ComunasManager.init();
         FieldsEditor.init();
         ZonasManager.init();
+        DiagTool.init();
 
-        // Exponer para debugging
+        // Escape cierra el modal abierto (los de hup-ui cierran con clic fuera
+        // o con [data-hup-close]).
+        $(document).on('keydown', function(e) {
+            if (e.key === 'Escape') $('.hupkec-panel .hup-modal:not([hidden])').prop('hidden', true);
+        });
+
+        // Expuesto para addons y depuración.
         window.HUPToast = HUPToast;
 
         // El panel está montado y sus manejadores registrados. Es el momento en
