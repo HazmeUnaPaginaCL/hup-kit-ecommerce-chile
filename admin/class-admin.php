@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 class HUPKEC_Admin {
 
     /** Versión de hup-ui/ copiada en el plugin (ver hup-ui/CHANGELOG.md). */
-    const UI_VERSION = '1.3.0';
+    const UI_VERSION = '1.3.1';
 
     /** Color propio del plugin: SOLO el ícono del header (regla de hup-ui). Azul bandera de Chile. */
     const COLOR = '#0039a6';
@@ -26,7 +26,7 @@ class HUPKEC_Admin {
     }
 
     public function add_plugin_action_links( $links ) {
-        $configure = '<a href="' . admin_url( 'admin.php?page=hupkec-settings' ) . '">' . __( 'Configurar', 'hup-kit-ecommerce-chile' ) . '</a>';
+        $configure = '<a href="' . esc_url( admin_url( 'admin.php?page=hupkec-settings' ) ) . '">' . esc_html__( 'Configuración', 'hup-kit-ecommerce-chile' ) . '</a>';
         array_unshift( $links, $configure );
         return $links;
     }
@@ -830,7 +830,7 @@ class HUPKEC_Admin {
                 <div class="hup-card__head">
                     <div>
                         <h3 class="hup-card__title">Zonas de despacho</h3>
-                        <p class="hup-card__desc">Cada comuna puede estar en una sola zona. El costo se suma al total del carrito.</p>
+                        <p class="hup-card__desc">Si una comuna está en varias zonas, el cliente elige entre ellas en el checkout.</p>
                     </div>
                     <button type="button" class="hup-btn" id="hupkec-new-zone-btn"><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span>Nueva zona</button>
                 </div>

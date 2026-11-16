@@ -5,6 +5,10 @@ Versionado semántico. Cada plugin copia `hup-ui/` y anota aquí qué versión u
 - **Menor** (1.1.0): componente nuevo, sin romper nada.
 - **Parche** (1.0.1): ajuste visual en tokens o CSS.
 
+## 1.3.1 — 13/11/2026
+- `.hup-card__foot` con `flex-wrap: wrap`: en móvil los botones del pie no bajaban de línea: se salían de la tarjeta y el último quedaba cortado. Visto en Sincronización.
+- Solo cambia `hup-admin.css`. Los plugins publicados en WordPress.org (Kit, Campos SEO, Indicadores) lo llevan en su próxima versión; no se publicó una versión solo por esto.
+
 ## 1.3.0 — 13/11/2026
 Copia maestra consolidada. Hasta aquí había dos "1.2.0" distintas (Campos SEO con IA y su Pro): esta versión es la unión de ambas más lo agregado al adaptar HUP - Kit Ecommerce Chile. **Es la versión a copiar en todos los plugins.**
 - Unifica las dos 1.2.0: modal ancho y acordeón con párrafos (Free) + `.hup-log` y arreglos de ancho en móvil (Pro).

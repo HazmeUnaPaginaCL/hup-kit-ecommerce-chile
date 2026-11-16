@@ -269,23 +269,57 @@ class HUPKEC_Shipping {
         return is_array( $z ) ? $z : [];
     }
 
-    public static function get_zone_for_city( $city ) {
-        if ( ! $city ) return null;
+    /**
+     * Todas las zonas que incluyen la comuna, en el orden en que se guardaron.
+     *
+     * Una comuna puede estar en varias zonas (p. ej. una por courier: Starken,
+     * Blue, Chilexpress) y el cliente elige entre ellas en el checkout. Hasta la
+     * 1.2.0 el índice guardaba una sola zona por comuna y la última pisaba a las
+     * anteriores, así que el checkout ofrecía solo una opción.
+     *
+     * @since 1.3.0
+     * @param string $city Comuna.
+     * @return array[] Zonas (vacío si la comuna no está en ninguna).
+     */
+    public static function get_zones_for_city( $city ) {
+        if ( ! $city ) return [];
         $index = self::get_zones_index();
         $key   = self::normalize_city_key( $city );
-        return $index[ $key ] ?? null;
+        return isset( $index[ $key ] ) ? array_values( $index[ $key ] ) : [];
     }
 
+    /**
+     * Primera zona que incluye la comuna.
+     *
+     * Se conserva para el código que solo necesita saber si la comuna tiene
+     * despacho. Para calcular tarifas usa get_zones_for_city().
+     *
+     * @param string $city Comuna.
+     * @return array|null
+     */
+    public static function get_zone_for_city( $city ) {
+        $zones = self::get_zones_for_city( $city );
+        return $zones ? $zones[0] : null;
+    }
+
+    /**
+     * Índice comuna normalizada → [ id de zona => zona ].
+     *
+     * Indexar por id evita repetir una zona si su lista trae la misma comuna dos
+     * veces (p. ej. con y sin tilde).
+     */
     private static function get_zones_index() {
         if ( is_array( self::$zones_index_cache ) ) {
             return self::$zones_index_cache;
         }
         $index = [];
-        foreach ( self::get_zones() as $zone ) {
+        foreach ( self::get_zones() as $zone_key => $zone ) {
+            if ( ! is_array( $zone ) ) continue;
+            $zone_id = (string) ( $zone['id'] ?? $zone_key );
             foreach ( (array) ( $zone['comunas'] ?? [] ) as $comuna ) {
                 $key = self::normalize_city_key( $comuna );
                 if ( $key !== '' ) {
-                    $index[ $key ] = $zone;
+                    $index[ $key ][ $zone_id ] = $zone;
                 }
             }
         }
@@ -504,28 +538,53 @@ class HUPKEC_Shipping {
             && has_block( 'woocommerce/checkout', wc_get_page_id( 'checkout' ) );
         $add( ! $blocks, 'El checkout es el clásico (no de bloques)', $blocks ? 'El checkout de bloques no es compatible. Usa el shortcode [woocommerce_checkout].' : '' );
 
-        $zone = self::get_zone_for_city( $city );
-        $add( (bool) $zone, 'La comuna pertenece a una zona de despacho', $zone ? $zone['name'] : 'Agrégala a una zona.' );
+        $zones = self::get_zones_for_city( $city );
+        $add(
+            (bool) $zones,
+            'La comuna pertenece a una zona de despacho',
+            $zones ? implode( ', ', wp_list_pluck( $zones, 'name' ) ) : 'Agrégala a una zona.'
+        );
 
-        $result = null;
-        if ( $zone ) {
+        // Una opción por zona, en el mismo orden que el checkout (más barata primero).
+        $types   = self::get_cost_types();
+        $results = [];
+        foreach ( $zones as $zone ) {
             $type = $zone['cost_type'] ?? 'free';
             $cost = 0.0;
             if ( $type === 'fixed' ) {
                 $free_from = floatval( $zone['cost_free_from'] ?? 0 );
                 $cost      = ( $free_from > 0 && $subtotal >= $free_from ) ? 0.0 : floatval( $zone['cost_value'] ?? 0 );
             }
-            $types  = self::get_cost_types();
-            $result = [
-                'zone'  => $zone['name'],
-                'type'  => $types[ $type ] ?? $type,
+            $results[] = [
+                'zone'   => $zone['name'],
+                'type'   => $types[ $type ] ?? $type,
                 // Texto plano: el panel lo escapa al pintarlo. wc_price() codifica
                 // el símbolo ($ → &#36;), así que hay que decodificarlo.
-                'cost'  => $type === 'cod' ? 'Por pagar al recibir' : ( $cost > 0 ? html_entity_decode( wp_strip_all_tags( wc_price( $cost ) ), ENT_QUOTES, 'UTF-8' ) : 'Gratis' ),
+                'cost'   => $type === 'cod' ? 'Por pagar al recibir' : ( $cost > 0 ? html_entity_decode( wp_strip_all_tags( wc_price( $cost ) ), ENT_QUOTES, 'UTF-8' ) : 'Gratis' ),
+                'amount' => $cost,
             ];
         }
+        $results = self::sort_by_amount( $results );
 
-        wp_send_json_success( [ 'checks' => $checks, 'result' => $result ] );
+        wp_send_json_success( [ 'checks' => $checks, 'results' => $results ] );
+    }
+
+    /**
+     * Ordena por 'amount' de menor a mayor. En los empates conserva el orden
+     * de guardado: usort es estable desde PHP 8.0, el mínimo del plugin.
+     *
+     * WooCommerce preselecciona la primera tarifa, así que la más barata queda
+     * elegida por defecto.
+     *
+     * @since 1.3.0
+     * @param array[] $items Elementos con clave 'amount'.
+     * @return array[]
+     */
+    public static function sort_by_amount( $items ) {
+        usort( $items, function ( $a, $b ) {
+            return (float) $a['amount'] <=> (float) $b['amount'];
+        } );
+        return $items;
     }
 
     /* =========================================================

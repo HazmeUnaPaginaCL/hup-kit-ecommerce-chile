@@ -5,7 +5,7 @@ Requires at least: 6.0
 Tested up to: 7.1
 Requires Plugins: woocommerce
 Requires PHP: 8.0
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -103,6 +103,13 @@ Not yet. This version supports the classic (shortcode) Checkout only, and declar
 
 == Changelog ==
 
+= 1.3.0 =
+* Fixed: when a comuna belongs to several shipping zones (for example one per courier), the checkout now offers all of them instead of only the last saved zone. Rates are listed from cheapest to most expensive.
+* Improved: "Probar una comuna" lists every shipping option the customer will see.
+* Improved: the zone editor shows every other zone that already includes a comuna.
+* Admin: the settings link in the plugins list now reads "Configuración", like every HUP plugin.
+* Admin: card footer buttons wrap on small screens.
+
 = 1.2.0 =
 * New: redesigned settings screen using the design system shared by all HUP plugins, with a light side menu, a link for each section, cleaner cards and a new Guide section.
 * New: "Probar una comuna" tool in the Despacho section. It simulates the shipping cost for any comuna and checks the WooCommerce settings it depends on: shipping zone, shipping method, shipping countries and classic checkout.
@@ -144,6 +151,9 @@ Not yet. This version supports the classic (shortcode) Checkout only, and declar
 * HPOS compatible. Classic Checkout only.
 
 == Upgrade Notice ==
+
+= 1.3.0 =
+Comunas in several shipping zones now show every option at checkout. Recommended update.
 
 = 1.2.0 =
 New settings design and a tool to test shipping for any comuna.

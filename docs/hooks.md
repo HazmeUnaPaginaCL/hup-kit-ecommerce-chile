@@ -356,6 +356,10 @@ add_filter( 'hupkec_zone_save_data', function ( array $zone, array $posted ) : a
 Calcula el costo de una zona. Es donde un addon implementa sus tipos de costo:
 fórmulas, recargos por clase de envío, tramos.
 
+Desde la 1.3.0 una comuna puede estar en varias zonas (p. ej. una por courier) y
+el checkout ofrece una tarifa por cada una: el filtro se aplica **una vez por
+zona** que incluye la comuna del cliente.
+
 Devolver `false` cancela la tarifa (la zona coincide pero no se ofrece envío).
 Cualquier valor no numérico se ignora y se conserva el costo del plugin. Los
 negativos se recortan a cero.
@@ -377,6 +381,12 @@ Ajusta la tarifa antes de registrarla. Permite cambiar la etiqueta o adjuntar
 
 El `id` y el `cost` no se pueden alterar aquí: el `id` es la clave de la tarifa
 elegida por el cliente, y el `cost` se ajusta antes, en `hupkec_zone_cost`.
+
+Se aplica una vez por cada zona que incluye la comuna. Desde la 1.3.0 el `id`
+tiene la forma `hupkec_shipping:{instancia}:{id de zona}` (antes
+`hupkec_shipping:{instancia}`); para saber de qué zona viene una tarifa usa
+`$zone['id']`, no el `id` de la tarifa. Las tarifas se registran de la más
+barata a la más cara.
 
 ```php
 add_filter( 'hupkec_shipping_rate_args', function ( array $args, array $zone, array $package ) : array {

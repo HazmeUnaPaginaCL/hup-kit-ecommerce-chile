@@ -848,15 +848,17 @@
         },
 
         /**
-         * Comunas que ya están en OTRA zona: una comuna solo puede pertenecer a
-         * una, y si se repite gana la última guardada, así que se avisa.
+         * Comunas que ya están en OTRAS zonas. Es válido (el cliente elige entre
+         * todas en el checkout); se muestra para que no se dupliquen sin querer.
          */
         takenBy: function() {
             const map = {};
             const current = this.currentZone ? this.currentZone.id : null;
             this.zones.forEach(function(z) {
                 if (z.id === current) return;
-                (z.comunas || []).forEach(function(c) { map[c] = z.name; });
+                (z.comunas || []).forEach(function(c) {
+                    (map[c] = map[c] || []).push(z.name);
+                });
             });
             return map;
         },
@@ -882,7 +884,7 @@
                         '</div>' +
                         '<div class="hup-checkgroup__body hup-checkgroup__body--scroll">' +
                             list.map(function(c) {
-                                const other = taken[c] ? ' <span class="hup-hint">(en ' + esc(taken[c]) + ')</span>' : '';
+                                const other = taken[c] ? ' <span class="hup-hint">(también en ' + esc(taken[c].join(', ')) + ')</span>' : '';
                                 return '<label class="hup-check hz-comuna-chk"><input type="checkbox" class="hz-comuna-input" value="' + esc(c) + '"> ' + esc(c) + other + '</label>';
                             }).join('') +
                         '</div>' +
@@ -1050,9 +1052,16 @@
                     const allOk = checks.every(function(c) { return c.ok; });
                     let html = '';
 
-                    if (res.data.result && allOk) {
+                    const results = res.data.results || [];
+                    if (results.length === 1 && allOk) {
                         html += '<div class="hup-notice hup-notice--success"><span class="dashicons dashicons-yes-alt" aria-hidden="true"></span><p>' +
-                            'El cliente de <strong>' + esc(comuna) + '</strong> verá «' + esc(res.data.result.zone) + '»: <strong>' + esc(res.data.result.cost) + '</strong>.</p></div>';
+                            'El cliente de <strong>' + esc(comuna) + '</strong> verá «' + esc(results[0].zone) + '»: <strong>' + esc(results[0].cost) + '</strong>.</p></div>';
+                    } else if (results.length > 1 && allOk) {
+                        html += '<div class="hup-notice hup-notice--success"><span class="dashicons dashicons-yes-alt" aria-hidden="true"></span><p>' +
+                            'El cliente de <strong>' + esc(comuna) + '</strong> podrá elegir entre ' + results.length + ' opciones: ' +
+                            results.map(function(r) {
+                                return '«' + esc(r.zone) + '» <strong>' + esc(r.cost) + '</strong>';
+                            }).join(' · ') + '.</p></div>';
                     } else {
                         html += '<div class="hup-notice hup-notice--error"><span class="dashicons dashicons-dismiss" aria-hidden="true"></span><p>' +
                             'El cliente de <strong>' + esc(comuna) + '</strong> no verá opciones de envío. Revisa lo marcado en rojo.</p></div>';

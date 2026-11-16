@@ -65,12 +65,32 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
             return;
         }
 
-        $zone = HUPKEC_Shipping::get_zone_for_city( $city );
-        if ( ! $zone ) return;
+        // Una tarifa por cada zona que incluye la comuna: si el comerciante creó
+        // una zona por courier, el cliente elige entre todas. Hasta la 1.2.0 se
+        // ofrecía solo la última zona guardada.
+        $rates = [];
+        foreach ( HUPKEC_Shipping::get_zones_for_city( $city ) as $zone ) {
+            $cost = $this->get_zone_cost( $zone, $package );
+            if ( $cost === false ) continue;
+            $rates[] = [ 'zone' => $zone, 'amount' => $cost ];
+        }
 
-        $cost = $this->get_zone_cost( $zone, $package );
-        if ( $cost === false ) return;
+        // Más barata primero: WooCommerce preselecciona la primera tarifa.
+        foreach ( HUPKEC_Shipping::sort_by_amount( $rates ) as $rate ) {
+            $this->add_zone_rate( $rate['zone'], $rate['amount'], $package );
+        }
+    }
 
+    /**
+     * Registra la tarifa de una zona.
+     *
+     * @since 1.3.0 (antes vivía dentro de calculate_shipping)
+     * @param array $zone    Zona que coincidió.
+     * @param float $cost    Costo ya calculado.
+     * @param array $package Paquete de envío de WooCommerce.
+     * @return void
+     */
+    private function add_zone_rate( $zone, $cost, $package ) {
         // "Por pagar" también cuesta 0 en el carrito, pero NO es gratis: el
         // cliente paga al recibir. Etiquetarlo "Envío gratis" era engañoso.
         $label = $zone['name'];
@@ -81,7 +101,7 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
         }
 
         $args = [
-            'id'      => $this->get_rate_id(),
+            'id'      => $this->get_zone_rate_id( $zone ),
             'label'   => $label,
             'cost'    => $cost,
             'taxes'   => false,
@@ -90,6 +110,8 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
 
         /**
          * Argumentos de la tarifa antes de registrarla.
+         *
+         * Se aplica una vez por cada zona que incluye la comuna del cliente.
          *
          * Permite ajustar la etiqueta o adjuntar meta_data que un addon pueda
          * leer luego en 'woocommerce_after_shipping_rate' —el hook nativo de
@@ -113,6 +135,25 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
         }
 
         $this->add_rate( $args );
+    }
+
+    /**
+     * Id de la tarifa de una zona: hupkec_shipping:{instancia}:{zona}.
+     *
+     * Cada zona necesita un id propio; con uno compartido WooCommerce se queda
+     * con una sola tarifa. El id de la zona no cambia al editarla, así que la
+     * elección del cliente se conserva aunque el comerciante cambie el costo.
+     *
+     * @since 1.3.0
+     * @param array $zone Zona.
+     * @return string
+     */
+    private function get_zone_rate_id( $zone ) {
+        $suffix = sanitize_key( (string) ( $zone['id'] ?? '' ) );
+        if ( $suffix === '' ) {
+            $suffix = substr( md5( (string) ( $zone['name'] ?? '' ) ), 0, 12 );
+        }
+        return $this->get_rate_id( $suffix );
     }
 
     /**
