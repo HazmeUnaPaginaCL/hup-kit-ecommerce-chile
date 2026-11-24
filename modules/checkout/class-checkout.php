@@ -15,6 +15,7 @@ class HUPKEC_Checkout {
          */
         add_filter( 'woocommerce_get_country_locale_default', [ $this, 'strip_locale_overrides' ], 9999 );
         add_filter( 'woocommerce_get_country_locale_base',    [ $this, 'strip_locale_overrides' ], 9999 );
+        add_filter( 'woocommerce_country_locale_field_selectors', [ $this, 'keep_phone_setting' ] );
 
         add_filter( 'woocommerce_billing_fields',  [ $this, 'apply_billing_fields'  ], 9999, 2 );
         add_filter( 'woocommerce_shipping_fields', [ $this, 'apply_shipping_fields' ], 9999, 2 );
@@ -55,6 +56,18 @@ class HUPKEC_Checkout {
             unset( $fields[ $key ]['priority'] );
         }
         return $fields;
+    }
+
+    /**
+     * El script de direcciones de WooCommerce repinta el teléfono según su propio
+     * ajuste: lo mostraba «(opcional)» aunque aquí sea obligatorio, y el pedido
+     * fallaba al enviarse. Lo decide el editor de campos.
+     *
+     * @since 1.3.1
+     */
+    public function keep_phone_setting( $selectors ) {
+        if ( is_array( $selectors ) ) unset( $selectors['phone'] );
+        return $selectors;
     }
 
     /* =========================================================
@@ -311,6 +324,7 @@ class HUPKEC_Checkout {
         // phpcs:disable WordPress.Security.NonceVerification.Missing
         foreach ( [ 'billing', 'shipping' ] as $section ) {
             if ( $section === 'shipping' && empty( $_POST['ship_to_different_address'] ) ) continue;
+            $wc_fields = WC()->checkout()->get_checkout_fields( $section );
             foreach ( hupkec_get_fields( $section ) as $field ) {
                 if ( empty( $field['enabled'] ) || empty( $field['custom'] ) ) continue;
 
@@ -324,7 +338,11 @@ class HUPKEC_Checkout {
                 $value = isset( $_POST[ $field['key'] ] ) ? wp_unslash( $_POST[ $field['key'] ] ) : '';
 
                 if ( ! empty( $field['required'] ) && empty( $_POST[ $field['key'] ] ) ) {
-                    wc_add_notice( sprintf( 'El campo "%s" es obligatorio.', $field['label'] ), 'error' );
+                    // Los campos del formulario ya los exige WooCommerce con su propio
+                    // aviso: repetirlo mostraba dos errores por campo.
+                    if ( empty( $wc_fields[ $field['key'] ]['required'] ) ) {
+                        wc_add_notice( sprintf( 'El campo "%s" es obligatorio.', $field['label'] ), 'error' );
+                    }
                     continue;
                 }
 

@@ -14,6 +14,16 @@ class HUPKEC_Billing {
      */
     private static $block_rendered = false;
 
+    /** Campos de la factura, en el formulario, el pedido y el perfil del cliente. */
+    const FIELDS = [
+        'billing_company_invoice',
+        'billing_rut_empresa',
+        'billing_giro_empresa',
+        'billing_region_empresa',
+        'billing_comuna_empresa',
+        'billing_direccion_empresa',
+    ];
+
     public function __construct() {
         // Resetear el guard de doble render al inicio de cada carga del form
         add_action( 'woocommerce_before_checkout_form', [ $this, 'reset_block_guard' ], 1 );
@@ -115,13 +125,25 @@ class HUPKEC_Billing {
         }
         // Nota: intencionalmente NO se lee user meta aquí para no pre-marcar por defecto
 
+        // Datos de la última factura del cliente. La casilla sigue sin marcar.
         $saved_data = [];
+        $user_id    = get_current_user_id();
+        if ( ! $is_post && $user_id && get_user_meta( $user_id, 'hupkec_needs_invoice', true ) === '1' ) {
+            foreach ( self::FIELDS as $key ) {
+                $saved_data[ $key ] = (string) get_user_meta( $user_id, $key, true );
+            }
+        }
 
         // Helper: valor del campo (POST tiene prioridad, luego user meta guardado)
         $val = function( $key ) use ( $is_post, $saved_data ) {
             if ( $is_post ) return sanitize_text_field( wp_unslash( $_POST[ $key ] ?? '' ) );
             return $saved_data[ $key ] ?? '';
         };
+
+        $region       = hupkec_normalize_region( $val( 'billing_region_empresa' ) );
+        $comuna       = $val( 'billing_comuna_empresa' );
+        $all_comunas  = HUPKEC_Settings::get_comunas();
+        $comunas      = isset( $regions[ $region ] ) ? ( $all_comunas[ $region ] ?? [] ) : [];
         ?>
         <div id="hupkec-billing-module" class="hupkec-billing-module">
 
@@ -181,18 +203,21 @@ class HUPKEC_Billing {
                                 <option value=""><?php esc_html_e( 'Selecciona una región...', 'hup-kit-ecommerce-chile' ); ?></option>
                                 <?php foreach ( $regions as $code => $name ): ?>
                                 <option value="<?php echo esc_attr($code); ?>"
-                                    <?php selected( hupkec_normalize_region( $val('billing_region_empresa') ), $code ); ?>>
+                                    <?php selected( $region, $code ); ?>>
                                     <?php echo esc_html($name); ?>
                                 </option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
 
-                        <!-- Comuna empresa (dinámica vía AJAX) -->
+                        <!-- Comuna empresa (se rellena al cambiar la región) -->
                         <div class="hupkec-billing-field-row form-row form-row-wide">
                             <label for="billing_comuna_empresa"><?php esc_html_e( 'Comuna de la empresa', 'hup-kit-ecommerce-chile' ); ?> <abbr class="required" title="requerido">*</abbr></label>
-                            <select id="billing_comuna_empresa" name="billing_comuna_empresa" class="select input-text" disabled>
-                                <option value=""><?php esc_html_e( 'Selecciona una región primero', 'hup-kit-ecommerce-chile' ); ?></option>
+                            <select id="billing_comuna_empresa" name="billing_comuna_empresa" class="select input-text" <?php disabled( empty( $comunas ) ); ?>>
+                                <option value=""><?php echo esc_html( $comunas ? __( 'Selecciona una comuna...', 'hup-kit-ecommerce-chile' ) : __( 'Selecciona una región primero', 'hup-kit-ecommerce-chile' ) ); ?></option>
+                                <?php foreach ( $comunas as $name ): ?>
+                                <option value="<?php echo esc_attr( $name ); ?>" <?php selected( $comuna, $name ); ?>><?php echo esc_html( $name ); ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
 
@@ -217,15 +242,10 @@ class HUPKEC_Billing {
        AJAX — COMUNAS DE EMPRESA
     ========================================================= */
     public function ajax_get_comunas_empresa() {
-        // Rate-limit: máximo 30 solicitudes por IP en 60 segundos.
-        // Mismo endurecimiento que hupkec_get_comunas (endpoint nopriv gemelo).
-        $ip       = sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ?? '' ) );
-        $rate_key = 'hupkec_comunas_emp_rate_' . md5( $ip );
-        $hits     = (int) get_transient( $rate_key );
-        if ( $hits >= 30 ) {
+        // Solo respaldo: desde la 1.3.1 las comunas viajan con la página.
+        if ( hupkec_rate_limited( 'comunas_emp', 300 ) ) {
             wp_send_json_error( 'Demasiadas solicitudes', 429 );
         }
-        set_transient( $rate_key, $hits + 1, 60 );
 
         // Verificar nonce igual que el AJAX de comunas principal
         if ( ! check_ajax_referer( 'hupkec_checkout', 'nonce', false ) ) {
@@ -267,7 +287,7 @@ class HUPKEC_Billing {
         // Validar RUT empresa con Módulo 11
         if ( ! empty( $_POST['billing_rut_empresa'] ) ) {
             if ( ! hupkec_is_valid_rut( sanitize_text_field( wp_unslash( $_POST['billing_rut_empresa'] ) ) ) ) {
-                wc_add_notice( 'El <strong>RUT de la empresa</strong> ingresado no es válido. Revisar el rut ingresado', 'error' );
+                wc_add_notice( 'El <strong>RUT de la empresa</strong> ingresado no es válido. Revisa el RUT ingresado.', 'error' );
             }
         }
         // phpcs:enable WordPress.Security.NonceVerification.Missing
@@ -291,16 +311,7 @@ class HUPKEC_Billing {
             return; // NO $order->save()
         }
 
-        $campos = [
-            'billing_company_invoice',
-            'billing_rut_empresa',
-            'billing_giro_empresa',
-            'billing_region_empresa',
-            'billing_comuna_empresa',
-            'billing_direccion_empresa',
-        ];
-
-        foreach ( $campos as $key ) {
+        foreach ( self::FIELDS as $key ) {
             $val = sanitize_text_field( wp_unslash( $_POST[ $key ] ?? '' ) );
             $order->update_meta_data( '_' . $key, $val );
         }
@@ -327,16 +338,7 @@ class HUPKEC_Billing {
         $user_id = $order->get_customer_id();
         if ( ! $user_id ) return;
 
-        $campos = [
-            'billing_company_invoice',
-            'billing_rut_empresa',
-            'billing_giro_empresa',
-            'billing_region_empresa',
-            'billing_comuna_empresa',
-            'billing_direccion_empresa',
-        ];
-
-        foreach ( $campos as $key ) {
+        foreach ( self::FIELDS as $key ) {
             $val = $order->get_meta( '_' . $key );
             if ( $val !== '' ) {
                 update_user_meta( $user_id, $key, $val );
@@ -492,15 +494,6 @@ class HUPKEC_Billing {
             return;
         }
 
-        // Pre-rellenar datos guardados si el usuario compró con factura antes
-        $saved_region = '';
-        $saved_comuna = '';
-        $user_id = get_current_user_id();
-        if ( $user_id && get_user_meta( $user_id, 'hupkec_needs_invoice', true ) === '1' ) {
-            $saved_region = hupkec_normalize_region( (string) get_user_meta( $user_id, 'billing_region_empresa', true ) );
-            $saved_comuna = (string) get_user_meta( $user_id, 'billing_comuna_empresa', true );
-        }
-
         // Localizar datos de facturación en el script hupkec-checkout
         // (que ya se carga desde class-frontend.php)
         wp_localize_script( 'hupkec-checkout', 'hupkec_billing_data', [
@@ -508,9 +501,7 @@ class HUPKEC_Billing {
             'nonce'         => wp_create_nonce( 'hupkec_checkout' ),
             'select_region' => 'Selecciona una región primero',
             'select_comuna' => 'Selecciona una comuna...',
-            'rut_error'     => 'RUT inválido. Revisar el rut ingresado',
-            'saved_region'  => $saved_region,
-            'saved_comuna'  => $saved_comuna,
+            'rut_error'     => 'RUT inválido. Revisa el RUT ingresado',
         ] );
     }
 }

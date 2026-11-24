@@ -5,6 +5,10 @@ Versionado semántico. Cada plugin copia `hup-ui/` y anota aquí qué versión u
 - **Menor** (1.1.0): componente nuevo, sin romper nada.
 - **Parche** (1.0.1): ajuste visual en tokens o CSS.
 
+## Sin cambio de versión — 19/11/2026 · Pie del menú
+- El pie de `.hup-nav` pasa a dos líneas: `Hecho por HUP 💻` y `Desde Quilpué para WordPress`, con los enlaces en negrita (`<strong>`). «HUP» enlaza a hazmeunapagina.cl y «WordPress» a `https://wordpress.org/plugins/search/hup/`. Regla y markup en `CLAUDE.md` (Estructura de página).
+- Solo cambia el texto del pie en cada panel; `tokens.css`, `hup-admin.css` y `hup-admin.js` siguen iguales, así que la versión se mantiene en 1.3.1.
+
 ## 1.3.1 — 13/11/2026
 - `.hup-card__foot` con `flex-wrap: wrap`: en móvil los botones del pie no bajaban de línea: se salían de la tarjeta y el último quedaba cortado. Visto en Sincronización.
 - Solo cambia `hup-admin.css`. Los plugins publicados en WordPress.org (Kit, Campos SEO, Indicadores) lo llevan en su próxima versión; no se publicó una versión solo por esto.

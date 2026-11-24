@@ -38,6 +38,11 @@ class HUPKEC_Frontend {
             // solo cuando el usuario elige una comuna — evita el loop al cargar la página
             $args['input_class'] = [ 'hupkec-comuna' ];
             $args['options']     = [ '' => __( 'Selecciona una región primero', 'hup-kit-ecommerce-chile' ) ];
+            // La comuna guardada del cliente va como opción: el JS la conserva
+            // al cargar la lista de su región.
+            if ( is_string( $value ) && $value !== '' ) {
+                $args['options'][ $value ] = $value;
+            }
         }
         return $args;
     }
@@ -49,19 +54,9 @@ class HUPKEC_Frontend {
         // Sin check_ajax_referer intencional: endpoint público para guests con sesiones
         // largas (> 12h). El nonce solo protege los endpoints de comunas, no da acceso
         // a datos sensibles.
-        //
-        // Rate-limit: máximo 5 solicitudes por IP en ventana de 60 segundos.
-        // Usa contador incremental en lugar del flag booleano anterior (que solo
-        // bloqueaba 5 segundos y permitía 12 solicitudes por minuto).
-        $ip       = sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ?? '' ) );
-        $rate_key = 'hupkec_nonce_rate_' . md5( $ip );
-        $hits     = (int) get_transient( $rate_key );
-
-        if ( $hits >= 5 ) {
+        if ( hupkec_rate_limited( 'nonce', 60 ) ) {
             wp_send_json_error( 'Demasiadas solicitudes', 429 );
         }
-
-        set_transient( $rate_key, $hits + 1, 60 );
 
         wp_send_json_success( [ 'nonce' => wp_create_nonce( 'hupkec_checkout' ) ] );
     }
@@ -70,16 +65,10 @@ class HUPKEC_Frontend {
        AJAX — COMUNAS
     ========================================================= */
     public function ajax_get_comunas() {
-        // Rate-limit: máximo 30 solicitudes por IP en 60 segundos.
-        // El nonce ya limita el acceso legítimo, pero esto protege contra
-        // scripts que roten nonces obtenidos del endpoint de refresh.
-        $ip       = sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ?? '' ) );
-        $rate_key = 'hupkec_comunas_rate_' . md5( $ip );
-        $hits     = (int) get_transient( $rate_key );
-        if ( $hits >= 30 ) {
+        // Solo respaldo: desde la 1.3.1 las comunas viajan con la página.
+        if ( hupkec_rate_limited( 'comunas', 300 ) ) {
             wp_send_json_error( 'Demasiadas solicitudes', 429 );
         }
-        set_transient( $rate_key, $hits + 1, 60 );
 
         // Verificar nonce igual que en ajax_get_comunas_empresa
         if ( ! check_ajax_referer( 'hupkec_checkout', 'nonce', false ) ) {
@@ -114,31 +103,41 @@ class HUPKEC_Frontend {
             if ( empty( $_POST[ $key ] ) ) continue;
 
             // Solo validar si el campo está habilitado en la configuración de campos
-            $field_enabled = false;
-            foreach ( hupkec_get_fields( $section ) as $f ) {
-                if ( $f['key'] === $key && ! empty( $f['enabled'] ) ) {
-                    $field_enabled = true;
-                    break;
-                }
-            }
-            if ( ! $field_enabled ) continue;
+            if ( ! in_array( $key, self::enabled_rut_fields(), true ) ) continue;
 
             $rut = sanitize_text_field( wp_unslash( $_POST[ $key ] ) );
             if ( ! hupkec_is_valid_rut( $rut ) ) {
-                wc_add_notice( sprintf( 'RUT inválido. Revisar el rut ingresado (%s).', $key === 'billing_rut' ? 'Facturación' : 'Envío' ), 'error' );
+                wc_add_notice( sprintf( 'RUT inválido. Revisa el RUT ingresado (%s).', $key === 'billing_rut' ? 'Facturación' : 'Envío' ), 'error' );
             }
         }
         // phpcs:enable WordPress.Security.NonceVerification.Missing
+    }
+
+    /**
+     * Campos RUT que este plugin muestra y valida.
+     *
+     * @since 1.3.1
+     * @return string[]
+     */
+    private static function enabled_rut_fields() {
+        if ( ! hupkec_module_active( 'checkout' ) ) return [];
+
+        $keys = [];
+        foreach ( [ 'billing', 'shipping' ] as $section ) {
+            foreach ( hupkec_get_fields( $section ) as $f ) {
+                if ( $f['key'] === $section . '_rut' && ! empty( $f['enabled'] ) ) {
+                    $keys[] = $f['key'];
+                }
+            }
+        }
+        return $keys;
     }
 
     /* =========================================================
        ASSETS
     ========================================================= */
     public function enqueue_assets() {
-        $checkout_page_id = wc_get_page_id( 'checkout' );
-        if ( ! is_checkout() && ! ( $checkout_page_id > 0 && is_page( $checkout_page_id ) ) ) {
-            return;
-        }
+        if ( ! hupkec_is_address_page() ) return;
 
         wp_enqueue_script(
             'hupkec-checkout',
@@ -154,8 +153,9 @@ class HUPKEC_Frontend {
             'select_city'     => __( 'Selecciona una comuna...', 'hup-kit-ecommerce-chile' ),
             'select_region'   => __( 'Selecciona una región primero', 'hup-kit-ecommerce-chile' ),
             'shipping_active' => hupkec_module_active( 'shipping' ) ? 1 : 0,
-            'rut_fields'      => [ 'billing_rut', 'shipping_rut' ],
-            'rut_error'       => 'RUT inválido. Formato esperado: 12.345.678-9',
+            'rut_fields'      => self::enabled_rut_fields(),
+            'rut_error'       => 'RUT inválido. Revisa el RUT ingresado',
+            'comunas'         => HUPKEC_Settings::get_comunas(),
         ] );
 
         wp_enqueue_style(

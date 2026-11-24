@@ -173,7 +173,16 @@ class HUPKEC_Shipping_Method extends WC_Shipping_Method {
         return HUPKEC_Shipping::resolve_city_from_request();
     }
 
-    private function get_zone_cost( $zone, $package ) {
+    /**
+     * Costo de una zona para un paquete.
+     *
+     * Pública desde la 1.3.1: «Probar una comuna» usa este mismo cálculo.
+     *
+     * @param array $zone    Zona.
+     * @param array $package Paquete de envío de WooCommerce.
+     * @return float|int|false false = la zona no ofrece tarifa.
+     */
+    public function get_zone_cost( $zone, $package ) {
         $type      = $zone['cost_type']      ?? 'free';
         $value     = floatval( $zone['cost_value']      ?? 0 );
         $free_from = floatval( $zone['cost_free_from']  ?? 0 );

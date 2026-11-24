@@ -502,7 +502,7 @@ class HUPKEC_Admin {
                                 </a></li>
                             <?php endforeach; ?>
                         </ul>
-                        <div class="hup-nav__footer">Hecho por <a href="<?php echo esc_url( 'https://www.hazmeunapagina.cl' ); ?>" target="_blank" rel="noopener">HUP</a></div>
+                        <div class="hup-nav__footer">Hecho por <a href="https://hazmeunapagina.cl" target="_blank" rel="noopener noreferrer"><strong>HUP</strong></a> <span aria-hidden="true">💻</span><br>Desde Quilpué para <a href="https://wordpress.org/plugins/search/hup/" target="_blank" rel="noopener noreferrer"><strong>WordPress</strong></a></div>
                     </nav>
 
                     <main class="hup-main">
@@ -560,10 +560,8 @@ class HUPKEC_Admin {
                             $this->toggle( $key, $mod, HUPKEC_Modules::is_active( $key ) );
                         }
 
-                        // Teasers de módulos de la versión Pro. Se muestran SOLO si el Pro
-                        // no está instalado: cuando lo está, registra estos mismos módulos
-                        // (por su clave) en el registro de arriba con su interruptor real,
-                        // y aquí se omiten para no duplicarlos.
+                        // Cada ficha promocional se muestra hasta que su clave aparece
+                        // en el registro de módulos con el interruptor correspondiente.
                         foreach ( $teasers as $mod ) {
                             $this->pro_teaser( $mod );
                         }
@@ -594,11 +592,9 @@ class HUPKEC_Admin {
     /**
      * Módulos de la versión Pro que se muestran como teaser en Inicio.
      *
-     * Las claves ('tracking', 'labels') y los textos coinciden con los que el
-     * plugin Pro registra vía 'hupkec_modules_registry'. Así, al instalar el
-     * Pro, el módulo aparece exactamente en el mismo lugar pero con su
-     * interruptor real, y este teaser deja de mostrarse (ver el de-dupe por
-     * clave en tab_inicio). No aportan ninguna funcionalidad: son solo UI.
+     * Las claves coinciden con las que el Pro registra vía
+     * 'hupkec_modules_registry'. tab_inicio() muestra una ficha promocional
+     * mientras su módulo no esté registrado.
      *
      * @return array<string,array{label:string,desc:string}>
      */
@@ -611,6 +607,10 @@ class HUPKEC_Admin {
             'labels' => [
                 'label' => 'Etiquetas PDF',
                 'desc'  => 'Arma e imprime una etiqueta en PDF con los datos del pedido y del cliente para pegar en el paquete. El diseño se configura con un constructor visual y es global para todos los pedidos.',
+            ],
+            'product_images' => [
+                'label' => 'Carga de imágenes',
+                'desc'  => 'Completa la imagen principal de los productos desde una cuadrícula de pendientes.',
             ],
         ];
     }

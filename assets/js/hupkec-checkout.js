@@ -9,9 +9,14 @@ jQuery(function ($) {
     var ajaxUrl    = D.ajaxUrl       || '';
     var nonce      = D.nonce         || '';
     var selectCity = D.select_city   || 'Selecciona una comuna...';
+    var RUT_ERROR  = D.rut_error     || 'RUT inválido. Revisa el RUT ingresado';
     var selectReg  = D.select_region || 'Selecciona una región primero';
     var zoneCache  = {};
     var updateTimer = null;
+
+    // Las comunas viajan con la página. La consulta al servidor queda solo como
+    // respaldo (por ejemplo, una página guardada en caché por una versión anterior).
+    $.each(D.comunas || {}, function (region, comunas) { zoneCache[region] = { comunas: comunas }; });
 
     // Última comuna que se le comunicó a WooCommerce, por sección.
     // Es lo que corta el bucle: repoblar el select tras un updated_checkout
@@ -95,29 +100,52 @@ jQuery(function ($) {
     $(document).on('blur', '#billing_rut, #shipping_rut', function () {
         var val = $(this).val();
         if (!val) return;
-        if (!validateRut(val)) showRutError($(this), 'RUT inválido. Revisar el rut ingresado');
+        if (!validateRut(val)) showRutError($(this), RUT_ERROR);
         else clearRutError($(this));
     });
 
-    $(document).on('checkout_place_order', function () {
-        var valid = true;
-        $('#billing_rut, #shipping_rut').each(function () {
-            if (!$(this).is(':visible') || !$(this).val()) return;
-            if (!validateRut($(this).val())) {
-                showRutError($(this), 'RUT inválido. Revisar el rut ingresado');
-                valid = false;
+    /* Validación al enviar el pedido.
+       WooCommerce dispara 'checkout_place_order' con triggerHandler(), que no
+       burbujea: el manejador tiene que ir en el formulario, no en document. */
+    function onPlaceOrder(e) {
+        var $first = null;
+        $.each(D.rut_fields || [], function (_, key) {
+            var $rut = $('#' + key);
+            if (!$rut.length || !$rut.is(':visible') || !$rut.val()) return;
+            if (!validateRut($rut.val())) {
+                showRutError($rut, RUT_ERROR);
+                $first = $first || $rut;
             }
         });
-        return valid;
-    });
+
+        var $empresa = $('.hupkec-rut-empresa');
+        if ($('#hupkec_needs_invoice').is(':checked') && $empresa.val() && !validateRut($empresa.val())) {
+            $empresa.closest('.form-row').addClass('woocommerce-invalid');
+            $('#hupkec-rut-empresa-error').text(RUT_ERROR).show();
+            $first = $first || $empresa;
+        }
+
+        if (!$first) return;
+
+        $first[0].scrollIntoView({ block: 'center' });
+        $first.trigger('focus');
+        // Ningún otro manejador debe dar por bueno el envío.
+        e.stopImmediatePropagation();
+        return false;
+    }
+
+    function bindPlaceOrder() {
+        $('form.checkout').off('checkout_place_order.hupkec').on('checkout_place_order.hupkec', onPlaceOrder);
+    }
+    bindPlaceOrder();
+    $(document.body).on('init_checkout updated_checkout', bindPlaceOrder);
 
     /* ======================================================
        MÓDULO DE FACTURACIÓN
        Este bloque está en el nivel raíz del jQuery wrapper.
     ====================================================== */
     if (typeof window.hupkec_billing_data !== 'undefined') {
-        var BD         = window.hupkec_billing_data;
-        var bZoneCache = {};
+        var BD = window.hupkec_billing_data;
 
         /**
          * Inicializa el estado visual del bloque de facturación.
@@ -135,18 +163,10 @@ jQuery(function ($) {
                 $fields.hide().removeClass('hupkec-billing-open');
             }
 
-            // Pre-cargar comunas de empresa guardadas.
-            // La región ya viene seleccionada desde PHP con selected(),
-            // pero las comunas son dinámicas (AJAX). Hay que disparar
-            // el change de la región para cargarlas y seleccionar la guardada.
-            var $regionSel = $('#billing_region_empresa');
-            if ($regionSel.length && $regionSel.val()) {
-                // Región ya tiene valor (del PHP) → disparar AJAX de comunas
-                // saved_comuna se consumirá dentro de fillEmpresaComunas
-                $regionSel.trigger('change');
-            } else if ($regionSel.length && BD.saved_region && !$regionSel.val()) {
-                // Región sin valor → setear y disparar
-                $regionSel.val(BD.saved_region).trigger('change');
+            // Solo si la lista quedó vacía: recargarla siempre borraba la comuna
+            // elegida cada vez que WooCommerce actualizaba el checkout.
+            if ($('#billing_region_empresa').val() && $('#billing_comuna_empresa option').length <= 1) {
+                loadEmpresaComunas('');
             }
         }
 
@@ -162,19 +182,7 @@ jQuery(function ($) {
         /* Re-init tras actualización AJAX de WooCommerce */
         $(document.body).on('updated_checkout', function () {
             // Pequeño delay para que WC termine de re-renderizar el DOM
-            setTimeout(function () {
-                initBillingModule();
-                // Si el bloque de factura está abierto y la lista de comunas
-                // quedó vacía (updated_checkout borra selects dinámicos),
-                // recargarla
-                if ($('#hupkec_needs_invoice').is(':checked')) {
-                    var $comunaSel = $('#billing_comuna_empresa');
-                    var $regionSel = $('#billing_region_empresa');
-                    if ($regionSel.val() && $comunaSel.find('option').length <= 1) {
-                        $regionSel.trigger('change');
-                    }
-                }
-            }, 200);
+            setTimeout(initBillingModule, 200);
         });
 
         /* Máscara RUT empresa */
@@ -194,49 +202,45 @@ jQuery(function ($) {
             if (!val) return;
             if (!validateRut(val)) {
                 $(this).closest('.form-row').addClass('woocommerce-invalid');
-                $('#hupkec-rut-empresa-error').text(BD.rut_error).show();
+                $('#hupkec-rut-empresa-error').text(RUT_ERROR).show();
             } else {
                 $(this).closest('.form-row').removeClass('woocommerce-invalid');
                 $('#hupkec-rut-empresa-error').hide();
             }
         });
 
-        /* Comunas empresa (AJAX) */
-        $(document).on('change', '#billing_region_empresa', function () {
-            var region = $(this).val();
+        /* Comunas empresa */
+        $(document).on('change', '#billing_region_empresa', function () { loadEmpresaComunas(''); });
+
+        /**
+         * Rellena las comunas de la región de la empresa.
+         *
+         * @param {string} preferred Comuna que debe quedar elegida, si existe.
+         */
+        function loadEmpresaComunas(preferred) {
+            var region = ($('#billing_region_empresa').val() || '').toString();
             var $city  = $('#billing_comuna_empresa');
 
+            if (!region || zoneCache[region]) {
+                fillEmpresaComunas($city, region ? zoneCache[region].comunas : null, preferred);
+                return;
+            }
+
             $city.empty().prop('disabled', true);
-
-            if (!region) {
-                $city.append($('<option>').val('').text(BD.select_region));
-                return;
-            }
-
-            if (bZoneCache[region]) {
-                fillEmpresaComunas($city, bZoneCache[region]);
-                if (BD.saved_comuna) { $city.val(BD.saved_comuna); BD.saved_comuna = ''; }
-                return;
-            }
-
-            $.post(BD.ajaxUrl, {
-                action: 'hupkec_get_comunas_empresa',
-                nonce:  BD.nonce,
-                region: region
-            }, function(res) {
-                if (res.success) {
-                    bZoneCache[region] = res.data;
-                    fillEmpresaComunas($city, res.data);
-                    if (BD.saved_comuna) { $city.val(BD.saved_comuna); BD.saved_comuna = ''; }
+            $.post(BD.ajaxUrl, { action: 'hupkec_get_comunas_empresa', nonce: nonce, region: region }, function (res) {
+                if (!res.success) return;
+                zoneCache[region] = { comunas: res.data };
+                if ($('#billing_region_empresa').val() === region) {
+                    fillEmpresaComunas($('#billing_comuna_empresa'), res.data, preferred);
                 }
             });
-        });
+        }
 
-        function fillEmpresaComunas($sel, comunas) {
-            $sel.empty();
-            $sel.append($('<option>').val('').text(BD.select_comuna));
-            $.each(comunas, function(_, c) { $sel.append($('<option>').val(c).text(c)); });
-            $sel.prop('disabled', false);
+        function fillEmpresaComunas($sel, comunas, preferred) {
+            $sel.empty().append($('<option>').val('').text(comunas ? BD.select_comuna : BD.select_region));
+            $.each(comunas || [], function (_, c) { $sel.append($('<option>').val(c).text(c)); });
+            $sel.prop('disabled', !comunas);
+            $sel.val(preferred && comunas && comunas.indexOf(preferred) !== -1 ? preferred : '');
         }
 
         /* Botón copiar datos del comprador */
@@ -253,37 +257,15 @@ jQuery(function ($) {
             if (direccion) $('#billing_direccion_empresa').val(direccion);
 
             if (region) {
-                $('#billing_region_empresa').val(region).trigger('change');
-                var attempts = 0;
-                var waitForComunas = setInterval(function () {
-                    var $opt = $('#billing_comuna_empresa option[value="' + comuna + '"]');
-                    if ($opt.length) {
-                        $('#billing_comuna_empresa').val(comuna);
-                        clearInterval(waitForComunas);
-                    } else if (++attempts > 40) {
-                        clearInterval(waitForComunas);
-                    }
-                }, 100);
+                $('#billing_region_empresa').val(region);
+                loadEmpresaComunas(comuna);
             }
 
             var $btn = $(this);
             $btn.text('✓ Copiado').addClass('hupkec-btn-copied');
             setTimeout(function () {
-                $btn.text('📋 Copiar datos del comprador').removeClass('hupkec-btn-copied');
+                $btn.text('Copiar datos del comprador').removeClass('hupkec-btn-copied');
             }, 2000);
-        });
-
-        /* Validación al enviar pedido */
-        $(document).on('checkout_place_order', function () {
-            if (!$('#hupkec_needs_invoice').is(':checked')) return true;
-            var valid = true;
-            var rut = $('.hupkec-rut-empresa').val();
-            if (rut && !validateRut(rut)) {
-                $('.hupkec-rut-empresa').closest('.form-row').addClass('woocommerce-invalid');
-                $('#hupkec-rut-empresa-error').text(BD.rut_error).show();
-                valid = false;
-            }
-            return valid;
         });
 
         /* Init en carga de página */

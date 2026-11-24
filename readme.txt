@@ -5,7 +5,7 @@ Requires at least: 6.0
 Tested up to: 7.1
 Requires Plugins: woocommerce
 Requires PHP: 8.0
-Stable tag: 1.3.0
+Stable tag: 1.3.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -93,6 +93,10 @@ Yes. The plugin integrates directly with WooCommerce and is compatible with any 
 
 Not yet. This version supports the classic (shortcode) Checkout only, and declares that incompatibility so WooCommerce can warn you. Block Checkout support is planned for a future release.
 
+= Can I manage missing product images in bulk? =
+
+The optional Pro add-on provides a grid for assigning product images with drag and drop and setting default images for products without a main image.
+
 == Screenshots ==
 
 1. Admin panel
@@ -102,6 +106,18 @@ Not yet. This version supports the classic (shortcode) Checkout only, and declar
 5. Shipping zones with costs
 
 == Changelog ==
+
+= 1.3.1 =
+* Fixed: customers can choose their comuna in My account > Addresses.
+* Fixed: the company comuna is no longer cleared when the checkout updates.
+* Fixed: comunas load with the page, so stores behind a proxy are not rate limited.
+* Fixed: an invalid RUT is now detected before the order is sent, and its field is focused.
+* Fixed: required custom fields show a single error.
+* Fixed: with recent WooCommerce versions, a required phone was shown as optional.
+* Fixed: "Probar una comuna" uses the real shipping cost, including add-on cost types, and negative costs are not accepted.
+* Improved: the checkout keeps the saved comuna of returning customers, and their invoice details are prefilled.
+* Tested with WooCommerce 11.3.
+* Admin: the Home screen now highlights the Product Images module from the optional Pro add-on. When the add-on registers the module, its switch appears in the module list.
 
 = 1.3.0 =
 * Fixed: when a comuna belongs to several shipping zones (for example one per courier), the checkout now offers all of them instead of only the last saved zone. Rates are listed from cheapest to most expensive.

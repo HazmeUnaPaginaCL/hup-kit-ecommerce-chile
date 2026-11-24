@@ -393,8 +393,8 @@ class HUPKEC_Shipping {
         $name           = trim( sanitize_text_field( $posted['name'] ?? '' ) );
         $comunas        = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $posted['comunas'] ?? [] ) ) ) );
         $cost_type      = sanitize_text_field( $posted['cost_type'] ?? 'free' );
-        $cost_value     = floatval( $posted['cost_value'] ?? 0 );
-        $cost_free_from = floatval( $posted['cost_free_from'] ?? 0 );
+        $cost_value     = max( 0.0, floatval( $posted['cost_value'] ?? 0 ) );
+        $cost_free_from = max( 0.0, floatval( $posted['cost_free_from'] ?? 0 ) );
         $color          = sanitize_hex_color( $posted['color'] ?? '#378ADD' ) ?: '#378ADD';
 
         if ( ! array_key_exists( $cost_type, self::get_cost_types() ) ) {
@@ -512,8 +512,20 @@ class HUPKEC_Shipping {
         $ships_cl       = isset( $ship_countries['CL'] );
         $add( $ships_cl, 'Chile está entre los países de envío', $ships_cl ? '' : 'Revisa WooCommerce → Ajustes → General → Ubicaciones de envío.' );
 
+        // Un producto de ejemplo: las fórmulas de los addons necesitan contenido.
+        $product = new WC_Product_Simple();
+        $product->set_price( $subtotal );
         $package = [
-            'contents'        => [],
+            'contents'        => [
+                'hupkec_test' => [
+                    'quantity'          => 1,
+                    'data'              => $product,
+                    'line_total'        => $subtotal,
+                    'line_subtotal'     => $subtotal,
+                    'line_tax'          => 0,
+                    'line_subtotal_tax' => 0,
+                ],
+            ],
             'contents_cost'   => $subtotal,
             'applied_coupons' => [],
             'user'            => [ 'ID' => get_current_user_id() ],
@@ -545,24 +557,33 @@ class HUPKEC_Shipping {
             $zones ? implode( ', ', wp_list_pluck( $zones, 'name' ) ) : 'Agrégala a una zona.'
         );
 
-        // Una opción por zona, en el mismo orden que el checkout (más barata primero).
+        // Una opción por zona, con el mismo cálculo y orden que el checkout.
         $types   = self::get_cost_types();
+        WC()->shipping(); // Asegura que la clase del método esté cargada.
+        $method  = new HUPKEC_Shipping_Method();
         $results = [];
         foreach ( $zones as $zone ) {
             $type = $zone['cost_type'] ?? 'free';
-            $cost = 0.0;
-            if ( $type === 'fixed' ) {
-                $free_from = floatval( $zone['cost_free_from'] ?? 0 );
-                $cost      = ( $free_from > 0 && $subtotal >= $free_from ) ? 0.0 : floatval( $zone['cost_value'] ?? 0 );
+            $cost = $method->get_zone_cost( $zone, $package );
+            if ( $cost === false ) continue;
+
+            // Texto plano: el panel lo escapa al pintarlo. wc_price() codifica
+            // el símbolo ($ → &#36;), así que hay que decodificarlo.
+            $price = $cost > 0 ? html_entity_decode( wp_strip_all_tags( wc_price( $cost ) ), ENT_QUOTES, 'UTF-8' ) : '';
+            if ( $type === 'cod' ) {
+                $price = $price !== '' ? 'Por pagar al recibir + ' . $price : 'Por pagar al recibir';
             }
             $results[] = [
                 'zone'   => $zone['name'],
                 'type'   => $types[ $type ] ?? $type,
-                // Texto plano: el panel lo escapa al pintarlo. wc_price() codifica
-                // el símbolo ($ → &#36;), así que hay que decodificarlo.
-                'cost'   => $type === 'cod' ? 'Por pagar al recibir' : ( $cost > 0 ? html_entity_decode( wp_strip_all_tags( wc_price( $cost ) ), ENT_QUOTES, 'UTF-8' ) : 'Gratis' ),
-                'amount' => $cost,
+                'cost'   => $price !== '' ? $price : 'Gratis',
+                'amount' => (float) $cost,
             ];
+        }
+        if ( $zones && ! $results ) {
+            $add( false, 'La zona ofrece una tarifa para este carrito', 'El cálculo de costo la canceló para este carrito.' );
+        } elseif ( $results && has_filter( 'hupkec_zone_cost' ) ) {
+            $add( true, 'Costo calculado con un producto de ejemplo', 'Sin peso ni clase de envío: con fórmulas o recargos por clase, el costo real puede cambiar.' );
         }
         $results = self::sort_by_amount( $results );
 
@@ -571,7 +592,7 @@ class HUPKEC_Shipping {
 
     /**
      * Ordena por 'amount' de menor a mayor. En los empates conserva el orden
-     * de guardado: usort es estable desde PHP 8.0, el mínimo del plugin.
+     * de guardado: usort es estable desde PHP 8.0.
      *
      * WooCommerce preselecciona la primera tarifa, así que la más barata queda
      * elegida por defecto.
