@@ -341,6 +341,9 @@
     const FieldsEditor = {
         currentSection: 'billing',
         draggedElement: null,
+        // Hay cambios en el editor que aún no se guardan (orden, interruptores,
+        // campos editados, agregados o eliminados).
+        dirty: false,
 
         init: function() {
             if (!$('#hupkec-fields-editor').length) return;
@@ -349,6 +352,52 @@
             this.setupButtons();
             this.setupModal();
             this.setupBillingModule();
+            this.setupKeyboard();
+            this.setupLeaveWarning();
+        },
+
+        setDirty: function(dirty) {
+            this.dirty = !!dirty;
+            let $status = $('#hupkec-fields-dirty');
+            if (!$status.length) {
+                $status = $('<span id="hupkec-fields-dirty" class="hup-hint" role="status"></span>').insertAfter('#hupkec-save-fields');
+            }
+            $status.text(this.dirty ? 'Hay cambios sin guardar.' : '');
+        },
+
+        // Salir de la página (otro menú, recargar, cerrar) con cambios sin guardar
+        // los perdía en silencio: el navegador pregunta antes.
+        setupLeaveWarning: function() {
+            const self = this;
+            window.addEventListener('beforeunload', function(e) {
+                if (!self.dirty) return;
+                e.preventDefault();
+                e.returnValue = '';
+            });
+        },
+
+        // Orden con teclado: en el asa, flecha arriba/abajo mueve el campo.
+        setupKeyboard: function() {
+            const self = this;
+            $('#hupkec-fields-editor').on('keydown', '.hupkec-field-move', function(e) {
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                e.preventDefault();
+                const section = self.currentSection;
+                const list = hupkecAdmin.fields[section] || [];
+                const from = parseInt($(this).closest('.hupkec-field-item').data('index'), 10);
+                const to = from + (e.key === 'ArrowUp' ? -1 : 1);
+                // Los campos fijos (País) no se mueven ni se saltan.
+                if (to < 0 || to >= list.length || list[to].locked) return;
+                const moved = list.splice(from, 1)[0];
+                list.splice(to, 0, moved);
+                self.setDirty(true);
+                self.render(section);
+                $('#hupkec-fields-editor .hupkec-field-item[data-index="' + to + '"] .hupkec-field-move').trigger('focus');
+                $('#hupkec-fields-move-status').text((moved.label || moved.key) + ': posición ' + (to + 1) + ' de ' + list.length + '.');
+            });
+            if (!$('#hupkec-fields-move-status').length) {
+                $('<p id="hupkec-fields-move-status" class="screen-reader-text" aria-live="polite"></p>').insertAfter('#hupkec-fields-editor');
+            }
         },
 
         setupSubtabs: function() {
@@ -399,7 +448,9 @@
             const $item = $(
                 '<li class="hupkec-field-item' + (locked ? ' is-locked' : '') + (field.enabled ? '' : ' is-off') + '"' +
                     ' draggable="' + (!locked) + '" data-index="' + index + '">' +
-                    '<span class="dashicons ' + (locked ? 'dashicons-lock' : 'dashicons-menu') + ' hup-handle" aria-hidden="true"></span>' +
+                    (locked
+                        ? '<span class="dashicons dashicons-lock hup-handle" aria-hidden="true"></span>'
+                        : '<button type="button" class="hup-handle hupkec-field-move" aria-keyshortcuts="ArrowUp ArrowDown" aria-label="Mover ' + esc(field.label || field.key) + '. Arrastra o usa las flechas arriba y abajo." title="Arrastra o usa las flechas para ordenar"><span class="dashicons dashicons-menu" aria-hidden="true"></span></button>') +
                     '<div class="hup-row__text">' +
                         '<div class="hup-row__title">' + esc(field.label || field.key) + badge + '</div>' +
                         '<div class="hup-row__desc">' + meta.join(' · ') + '</div>' +
@@ -411,9 +462,11 @@
                 '</li>'
             );
 
+            const self = this;
             $item.find('.hup-toggle input').on('change', function() {
                 hupkecAdmin.fields[section][index].enabled = $(this).is(':checked');
                 $item.toggleClass('is-off', !$(this).is(':checked'));
+                self.setDirty(true);
             });
             $item.find('.hupkec-btn-edit-field').on('click', () => this.openModal(section, index));
             $item.find('.hupkec-btn-del-field').on('click', () => this.deleteField(section, index));
@@ -424,8 +477,14 @@
         deleteField: function(section, index) {
             const field = hupkecAdmin.fields[section][index];
             if (!field) return;
-            if (!confirm('¿Eliminar el campo «' + (field.label || field.key) + '»? Recuerda guardar los campos después.')) return;
+            // El RUT es el campo que más se echa de menos: se avisa qué deja de pasar
+            // y que basta con apagarlo para ocultarlo.
+            const pregunta = /_rut$/.test(field.key || '')
+                ? '¿Eliminar el campo «' + (field.label || field.key) + '»? El checkout dejará de pedir y validar el RUT. Si solo quieres ocultarlo, apágalo con su interruptor. Para recuperarlo después tendrás que usar «Restaurar campos», que deshace todos los cambios de Campos.'
+                : '¿Eliminar el campo «' + (field.label || field.key) + '»? Recuerda guardar los campos después.';
+            if (!confirm(pregunta)) return;
             hupkecAdmin.fields[section].splice(index, 1);
+            this.setDirty(true);
             this.render(section);
             HUPToast.success('Campo eliminado. Recuerda guardar.');
         },
@@ -466,6 +525,7 @@
                 newOrder.push(hupkecAdmin.fields[section][$(this).data('index')]);
             });
             hupkecAdmin.fields[section] = newOrder;
+            this.setDirty(true);
             this.render(section);
         },
 
@@ -477,7 +537,7 @@
                 Util.setLoading($btn, true);
                 Util.post({ action: 'hupkec_save_fields', fields: JSON.stringify(hupkecAdmin.fields) })
                     .done(function(res) {
-                        if (res && res.success) HUPToast.success('Campos guardados');
+                        if (res && res.success) { HUPToast.success('Campos guardados'); self.setDirty(false); }
                         else HUPToast.error('No se pudieron guardar los campos');
                     })
                     .fail(function() { HUPToast.error('Error de conexión'); })
@@ -492,6 +552,7 @@
                     .done(function(res) {
                         if (res && res.success && res.data) {
                             hupkecAdmin.fields = res.data;
+                            self.setDirty(false);
                             self.render(self.currentSection);
                             HUPToast.success('Campos restaurados');
                         } else {
@@ -628,6 +689,7 @@
                 hupkecAdmin.fields[section][index] = $.extend({}, existing, field);
             }
 
+            this.setDirty(true);
             this.render(section);
             $('#hupkec-field-modal').prop('hidden', true);
             HUPToast.success(isNew ? 'Campo agregado. Recuerda guardar.' : 'Campo actualizado. Recuerda guardar.');
@@ -717,8 +779,8 @@
                     '<tr>' +
                         '<td><span class="hup-inline"><span class="hup-dot" style="--hup-dot:' + color + '"></span><strong>' + esc(zone.name) + '</strong></span></td>' +
                         '<td>' + this.costBadge(zone) + '</td>' +
-                        '<td>' + n + ' comuna' + (n === 1 ? '' : 's') + (r ? ' · ' + r + ' región' + (r === 1 ? '' : 'es') : '') + '</td>' +
-                        '<td class="is-num"><span class="hup-inline">' +
+                        '<td>' + n + ' comuna' + (n === 1 ? '' : 's') + (r ? ' · ' + r + (r === 1 ? ' región' : ' regiones') : '') + '</td>' +
+                        '<td class="is-num"><span class="hup-inline hupkec-zone-actions">' +
                             '<button type="button" class="hup-btn hup-btn--icon hupkec-edit-zone" data-index="' + index + '" aria-label="Editar ' + esc(zone.name) + '"><span class="dashicons dashicons-edit" aria-hidden="true"></span></button>' +
                             '<button type="button" class="hup-btn hup-btn--icon hup-btn--danger-outline hupkec-delete-zone" data-index="' + index + '" aria-label="Eliminar ' + esc(zone.name) + '"><span class="dashicons dashicons-trash" aria-hidden="true"></span></button>' +
                         '</span></td>' +
@@ -731,6 +793,8 @@
                     '<tbody>' + rows + '</tbody>' +
                 '</table>'
             );
+            // hup-ui 1.4.0: la tabla se desplaza sola en pantallas angostas.
+            if (window.HUP && window.HUP.refresh) window.HUP.refresh($list[0]);
         },
 
         costBadge: function(zone) {

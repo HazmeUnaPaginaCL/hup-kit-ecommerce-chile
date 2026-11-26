@@ -21,3 +21,7 @@
 .hupkec-field-item.is-locked .hup-handle { cursor: default; }
 .hupkec-field-item .hup-row__text { flex: 1; min-width: 0; }
 .hupkec-field-item.is-off .hup-row__title { color: var(--hup-subtle); }
+/* El asa es un botón: se ordena arrastrando o con flecha arriba/abajo. */
+.hup-app .hupkec-field-move { display: grid; place-items: center; width: 28px; height: 32px; flex: none; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #b4bac6; cursor: grab; }
+.hup-app .hupkec-field-move:hover { color: var(--hup-muted); background: var(--hup-bg); }
+.hup-app .hupkec-field-move:focus-visible { outline: 2px solid var(--hup-primary); outline-offset: 1px; color: var(--hup-primary); }

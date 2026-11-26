@@ -341,7 +341,8 @@ class HUPKEC_Checkout {
                     // Los campos del formulario ya los exige WooCommerce con su propio
                     // aviso: repetirlo mostraba dos errores por campo.
                     if ( empty( $wc_fields[ $field['key'] ]['required'] ) ) {
-                        wc_add_notice( sprintf( 'El campo "%s" es obligatorio.', $field['label'] ), 'error' );
+                        // Con 'id', WooCommerce enlaza el aviso a su campo y lo marca en el formulario.
+                        wc_add_notice( sprintf( 'El campo "%s" es obligatorio.', $field['label'] ), 'error', [ 'id' => $field['key'] ] );
                     }
                     continue;
                 }
@@ -362,7 +363,7 @@ class HUPKEC_Checkout {
                  */
                 $error = apply_filters( 'hupkec_field_validation_error', '', $field, $value, $section );
                 if ( is_string( $error ) && $error !== '' ) {
-                    wc_add_notice( $error, 'error' );
+                    wc_add_notice( $error, 'error', [ 'id' => $field['key'] ] );
                 }
             }
         }

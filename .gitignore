@@ -63,3 +63,5 @@ node_modules/
 # Documentos internos — estrategia de negocio
 CLAUDE.md
 TASKS.md
+# Copia maestra de hup-ui (sistema de diseño HUP): se trabaja aquí pero no viaja en el plugin.
+.diseno-plugin/

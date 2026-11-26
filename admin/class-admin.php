@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 class HUPKEC_Admin {
 
     /** Versión de hup-ui/ copiada en el plugin (ver hup-ui/CHANGELOG.md). */
-    const UI_VERSION = '1.3.1';
+    const UI_VERSION = '1.4.0';
 
     /** Color propio del plugin: SOLO el ícono del header (regla de hup-ui). Azul bandera de Chile. */
     const COLOR = '#0039a6';
@@ -311,6 +311,12 @@ class HUPKEC_Admin {
                 'desc'  => 'Cómo configurar el plugin y resolver los problemas más comunes.',
                 'callback' => [ $this, 'tab_guia' ], 'order' => 90, 'core' => true,
             ],
+            // Siempre la última, tras un separador (sanitize_tabs() la deja al final).
+            'otros' => [
+                'label' => 'Otros plugins HUP', 'icon' => 'dashicons-admin-plugins', 'module' => '',
+                'desc'  => 'Más plugins gratuitos de HUP para tu sitio WordPress.',
+                'callback' => [ $this, 'tab_otros' ], 'order' => 1000, 'core' => true,
+            ],
         ];
 
         /**
@@ -377,6 +383,11 @@ class HUPKEC_Admin {
         uasort( $clean, function( $a, $b ) {
             return $a['order'] <=> $b['order'];
         } );
+
+        // «Otros plugins HUP» va última aunque un addon use un orden mayor.
+        $otros = $clean['otros'];
+        unset( $clean['otros'] );
+        $clean['otros'] = $otros;
 
         return $clean;
     }
@@ -497,6 +508,7 @@ class HUPKEC_Admin {
                                 if ( $key === $current ) $classes .= ' is-active';
                                 if ( ! $this->tab_is_visible( $tab ) ) $classes .= ' hupkec-hidden';
                                 ?>
+                                <?php if ( 'otros' === $key ) : ?><li class="hup-nav__sep" role="separator"></li><?php endif; ?>
                                 <li><a class="<?php echo esc_attr( $classes ); ?>" data-tab="<?php echo esc_attr( $key ); ?>" href="<?php echo esc_url( $this->tab_url( $key ) ); ?>"<?php echo $key === $current ? ' aria-current="page"' : ''; ?>>
                                     <span class="dashicons <?php echo esc_attr( $tab['icon'] ); ?>" aria-hidden="true"></span><?php echo esc_html( $tab['label'] ); ?>
                                 </a></li>
@@ -586,7 +598,15 @@ class HUPKEC_Admin {
      * @return string
      */
     private function pro_url() {
-        return 'https://www.hazmeunapagina.cl/';
+        return 'https://www.hazmeunapagina.cl/web/plugins/';
+    }
+
+    /* ── OTROS PLUGINS HUP ──────────────────────────────── */
+    private function tab_otros() {
+        $render = include HUPKEC_PATH . 'hup-ui/otros-plugins.php';
+        if ( is_callable( $render ) ) {
+            $render( 'hup-kit-ecommerce-chile' );
+        }
     }
 
     /**

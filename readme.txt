@@ -4,8 +4,8 @@ Tags: chile, woocommerce, comunas, rut, checkout
 Requires at least: 6.0
 Tested up to: 7.1
 Requires Plugins: woocommerce
-Requires PHP: 8.0
-Stable tag: 1.3.1
+Requires PHP: 8.2
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -107,6 +107,17 @@ The optional Pro add-on provides a grid for assigning product images with drag a
 
 == Changelog ==
 
+= 1.4.0 =
+* Changed: requires PHP 8.2 or later. Sites on an older PHP version keep 1.3.1 until they update PHP.
+* New: "Otros plugins HUP" section, listing the other free HUP plugins with a link to WordPress.org.
+* Improved: checkout errors from the plugin link to their field and are shown next to it, like WooCommerce's own errors.
+* Improved: checkout fields can be reordered with the keyboard (arrow up and down on the handle), not only by dragging.
+* Improved: leaving the page with unsaved changes in Campos asks for confirmation, and a note shows that there are changes to save.
+* Improved: deleting the RUT field explains what stops working and that it can be hidden instead.
+* Improved: mobile layout (the Edit and Delete buttons in Despacho stay on screen), dropdown arrows, dialogs and notices.
+* Fixed: "regiones" was misspelled in the shipping zones list.
+* Fixed: "Ver versión Pro" now opens the Pro page.
+
 = 1.3.1 =
 * Fixed: customers can choose their comuna in My account > Addresses.
 * Fixed: the company comuna is no longer cleared when the checkout updates.
@@ -167,6 +178,9 @@ The optional Pro add-on provides a grid for assigning product images with drag a
 * HPOS compatible. Classic Checkout only.
 
 == Upgrade Notice ==
+
+= 1.4.0 =
+Requires PHP 8.2 or later. Check your PHP version before updating. No settings change.
 
 = 1.3.0 =
 Comunas in several shipping zones now show every option at checkout. Recommended update.

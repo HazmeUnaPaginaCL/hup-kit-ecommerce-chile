@@ -280,14 +280,15 @@ class HUPKEC_Billing {
 
         foreach ( $campos as $key => $label ) {
             if ( empty( sanitize_text_field( wp_unslash( $_POST[ $key ] ?? '' ) ) ) ) {
-                wc_add_notice( sprintf( 'El campo <strong>%s</strong> es obligatorio para emitir factura.', $label ), 'error' );
+                // Con 'id', WooCommerce enlaza el aviso a su campo y lo marca en el formulario.
+                wc_add_notice( sprintf( 'El campo <strong>%s</strong> es obligatorio para emitir factura.', $label ), 'error', [ 'id' => $key ] );
             }
         }
 
         // Validar RUT empresa con Módulo 11
         if ( ! empty( $_POST['billing_rut_empresa'] ) ) {
             if ( ! hupkec_is_valid_rut( sanitize_text_field( wp_unslash( $_POST['billing_rut_empresa'] ) ) ) ) {
-                wc_add_notice( 'El <strong>RUT de la empresa</strong> ingresado no es válido. Revisa el RUT ingresado.', 'error' );
+                wc_add_notice( 'El <strong>RUT de la empresa</strong> ingresado no es válido. Revisa el RUT ingresado.', 'error', [ 'id' => 'billing_rut_empresa' ] );
             }
         }
         // phpcs:enable WordPress.Security.NonceVerification.Missing

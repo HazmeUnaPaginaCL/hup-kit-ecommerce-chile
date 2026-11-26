@@ -107,7 +107,8 @@ class HUPKEC_Frontend {
 
             $rut = sanitize_text_field( wp_unslash( $_POST[ $key ] ) );
             if ( ! hupkec_is_valid_rut( $rut ) ) {
-                wc_add_notice( sprintf( 'RUT inválido. Revisa el RUT ingresado (%s).', $key === 'billing_rut' ? 'Facturación' : 'Envío' ), 'error' );
+                // Con 'id', WooCommerce enlaza el aviso a su campo y lo marca en el formulario.
+                wc_add_notice( sprintf( 'RUT inválido. Revisa el RUT ingresado (%s).', $key === 'billing_rut' ? 'Facturación' : 'Envío' ), 'error', [ 'id' => $key ] );
             }
         }
         // phpcs:enable WordPress.Security.NonceVerification.Missing
